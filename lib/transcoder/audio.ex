@@ -1,4 +1,4 @@
-defmodule Boombox.Transcoder.Audio do
+defmodule Membrane.Transcoder.Audio do
   @moduledoc false
 
   import Membrane.ChildrenSpec
@@ -6,13 +6,27 @@ defmodule Boombox.Transcoder.Audio do
   alias Membrane.{AAC, ChildrenSpec, Opus, RawAudio, RemoteStream}
 
   @opus_sample_rate 48_000
+  @aac_sample_rates [
+    96_000,
+    88_200,
+    64_000,
+    48_000,
+    44_100,
+    32_000,
+    24_000,
+    22_050,
+    16_000,
+    12_000,
+    11_025,
+    8000
+  ]
 
   @type audio_stream_format :: AAC.t() | Opus.t() | RawAudio.t()
 
   defguard is_audio_format(format)
            when is_struct(format) and
                   (format.__struct__ in [AAC, Opus, RawAudio] or
-                     (format.__struct__ == RemoteStream and format.content_format == Opus and
+                     (format.__struct__ == RemoteStream and format.content_format in [Opus, AAC] and
                         format.type == :packetized))
 
   @spec plug_audio_transcoding(
@@ -34,7 +48,11 @@ defmodule Boombox.Transcoder.Audio do
   end
 
   defp do_plug_audio_transcoding(builder, %RemoteStream{content_format: Opus}, %Opus{}) do
-    builder |> child(:opus_parser, Opus.Parser)
+    builder
+  end
+
+  defp do_plug_audio_transcoding(builder, %RemoteStream{content_format: AAC}, %AAC{}) do
+    builder
   end
 
   defp do_plug_audio_transcoding(builder, input_format, output_format) do
@@ -67,6 +85,18 @@ defmodule Boombox.Transcoder.Audio do
       output_stream_format: %RawAudio{
         sample_format: :s16le,
         sample_rate: @opus_sample_rate,
+        channels: input_format.channels
+      }
+    })
+  end
+
+  defp maybe_plug_resampler(builder, %{sample_rate: sample_rate} = input_format, %AAC{})
+       when sample_rate not in @aac_sample_rates do
+    builder
+    |> child(:resampler, %Membrane.FFmpeg.SWResample.Converter{
+      output_stream_format: %RawAudio{
+        sample_format: :s16le,
+        sample_rate: 44_100,
         channels: input_format.channels
       }
     })

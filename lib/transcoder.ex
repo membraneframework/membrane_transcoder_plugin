@@ -50,7 +50,12 @@ defmodule Membrane.Transcoder do
   end
 
   @impl true
-  def handle_child_notification({:stream_format, format}, :forwarding_filter, _ctx, state) do
+  def handle_child_notification(
+        {:stream_format, format},
+        :forwarding_filter,
+        _ctx,
+        %{input_stream_format: nil} = state
+      ) do
     state =
       %{state | input_stream_format: format}
       |> resolve_output_stream_format()
