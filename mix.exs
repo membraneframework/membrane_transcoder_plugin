@@ -47,6 +47,8 @@ defmodule Membrane.Template.Mixfile do
       {:membrane_h265_ffmpeg_plugin, "~> 0.4.2"},
       {:membrane_ffmpeg_swresample_plugin, "~> 0.20.0"},
       {:membrane_timestamp_queue, "~> 0.2.2"},
+      {:membrane_h264_format, "~> 0.6.1"},
+      {:membrane_opus_format, "~> 0.3.0"},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
       {:dialyxir, ">= 0.0.0", only: :dev, runtime: false},
       {:credo, ">= 0.0.0", only: :dev, runtime: false}
