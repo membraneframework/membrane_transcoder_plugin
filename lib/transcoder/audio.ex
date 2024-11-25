@@ -48,11 +48,7 @@ defmodule Membrane.Transcoder.Audio do
   end
 
   defp do_plug_audio_transcoding(builder, %RemoteStream{content_format: Opus}, %Opus{}) do
-    builder
-  end
-
-  defp do_plug_audio_transcoding(builder, %RemoteStream{content_format: AAC}, %AAC{}) do
-    builder
+    builder |> child(:opus_parser, Opus.Parser)
   end
 
   defp do_plug_audio_transcoding(builder, input_format, output_format) do
