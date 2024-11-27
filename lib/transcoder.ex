@@ -4,6 +4,7 @@ defmodule Membrane.Transcoder do
 
   require __MODULE__.Audio
   require __MODULE__.Video
+  require Membrane.Logger
 
   alias __MODULE__.{Audio, ForwardingFilter, Video}
   alias Membrane.{AAC, Funnel, H264, H265, Opus, RawAudio, RawVideo, RemoteStream, VP8}
@@ -66,6 +67,24 @@ defmodule Membrane.Transcoder do
       |> get_child(:output_funnel)
 
     {[spec: spec], state}
+  end
+
+  @impl true
+  def handle_child_notification(
+        {:stream_format, new_format},
+        :forwarding_filter,
+        _ctx,
+        %{input_stream_format: non_nil_stream_format} = state
+      ) do
+    if new_format != non_nil_stream_format do
+      raise """
+      Received new stream format on transcoder's input: #{inspect(new_format)}
+      which doesn't match the first received input stream format: #{non_nil_stream_format}
+      Transcoder doesn't support updating the input stream format.
+      """
+    end
+
+    {[], state}
   end
 
   @impl true

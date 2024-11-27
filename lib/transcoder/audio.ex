@@ -26,7 +26,7 @@ defmodule Membrane.Transcoder.Audio do
   defguard is_audio_format(format)
            when is_struct(format) and
                   (format.__struct__ in [AAC, Opus, RawAudio] or
-                     (format.__struct__ == RemoteStream and format.content_format in [Opus, AAC] and
+                     (format.__struct__ == RemoteStream and format.content_format == Opus and
                         format.type == :packetized))
 
   @spec plug_audio_transcoding(
