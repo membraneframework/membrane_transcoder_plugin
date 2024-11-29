@@ -51,9 +51,11 @@ defmodule Membrane.Transcoder.Plugin.Mixfile do
       {:membrane_vp8_format, "~> 0.5.0"},
       {:membrane_opus_format, "~> 0.3.0"},
       {:membrane_aac_format, "~> 0.8.0"},
+      {:membrane_funnel_plugin, "~> 0.9.1"},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
       {:dialyxir, ">= 0.0.0", only: :dev, runtime: false},
-      {:credo, ">= 0.0.0", only: :dev, runtime: false}
+      {:credo, ">= 0.0.0", only: :dev, runtime: false},
+      {:membrane_file_plugin, "~> 0.17.2", only: :test}
     ]
   end
 
