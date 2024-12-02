@@ -1,6 +1,12 @@
 defmodule Membrane.Transcoder.Support.Preprocessors do
   import Membrane.ChildrenSpec
 
+  @raw_audio_stream_format %Membrane.RawAudio{
+    channels: 2,
+    sample_rate: 44_100,
+    sample_format: :s16le
+  }
+
   def decode_h264(link_builder) do
     child(link_builder, %Membrane.H264.Parser{
       output_alignment: :au,
@@ -30,9 +36,9 @@ defmodule Membrane.Transcoder.Support.Preprocessors do
     child(link_builder, Membrane.IVF.Deserializer)
   end
 
-  def parse_raw_audio(link_builder, stream_format) do
+  def parse_raw_audio(link_builder) do
     child(link_builder, %Membrane.RawAudioParser{
-      stream_format: stream_format,
+      stream_format: @raw_audio_stream_format,
       overwrite_pts?: true
     })
   end

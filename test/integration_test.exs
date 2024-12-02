@@ -18,18 +18,12 @@ defmodule Membrane.Transcoder.IntegrationTest do
                    output <- @video_outputs,
                    do: Map.put(input, :output_format, output)
 
-  @raw_audio_stream_format %RawAudio{
-    channels: 2,
-    sample_rate: 44_100,
-    sample_format: :s24le
-  }
-
   @audio_inputs [
-    # %{
-    #   input_format: RawAudio,
-    #   input_file: "audio.raw",
-    #   preprocess: &Preprocessors.parse_raw_audio(&1, @raw_audio_stream_format)
-    # },
+    %{
+      input_format: RawAudio,
+      input_file: "audio.raw",
+      preprocess: &Preprocessors.parse_raw_audio/1
+    },
     %{input_format: AAC, input_file: "audio.aac", preprocess: &Preprocessors.parse_aac/1},
     %{input_format: Opus, input_file: "audio.opus", preprocess: &Preprocessors.parse_opus/1}
   ]
