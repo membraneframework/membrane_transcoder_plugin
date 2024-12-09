@@ -66,7 +66,6 @@ defmodule Membrane.Transcoder.Video do
   end
 
   defp maybe_plug_parser_and_decoder(builder, %VP8{}) do
-    # todo: maybe specify framerate in decoder options
     builder |> child(:vp8_decoder, %VP8.Decoder{})
   end
 
@@ -75,7 +74,6 @@ defmodule Membrane.Transcoder.Video do
   end
 
   defp maybe_plug_encoder_and_parser(builder, %H264{} = h264) do
-    # todo: specify different preset in eg. mp4
     builder
     |> child(:h264_encoder, %H264.FFmpeg.Encoder{preset: :ultrafast})
     |> child(:h264_output_parser, %H264.Parser{
@@ -85,7 +83,6 @@ defmodule Membrane.Transcoder.Video do
   end
 
   defp maybe_plug_encoder_and_parser(builder, %H265{} = h265) do
-    # todo: specify different preset in eg. mp4
     builder
     |> child(:h265_encoder, %H265.FFmpeg.Encoder{preset: :ultrafast})
     |> child(:h265_output_parser, %H265.Parser{
@@ -95,7 +92,6 @@ defmodule Membrane.Transcoder.Video do
   end
 
   defp maybe_plug_encoder_and_parser(builder, %VP8{}) do
-    # todo: check if no option is required
     builder |> child(:vp8_encoder, %VP8.Encoder{})
   end
 
