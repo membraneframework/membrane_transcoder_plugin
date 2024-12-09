@@ -79,7 +79,7 @@ defmodule Membrane.Transcoder do
     if new_format != non_nil_stream_format do
       raise """
       Received new stream format on transcoder's input: #{inspect(new_format)}
-      which doesn't match the first received input stream format: #{non_nil_stream_format}
+      which doesn't match the first received input stream format: #{inspect(non_nil_stream_format)}
       Transcoder doesn't support updating the input stream format.
       """
     end
