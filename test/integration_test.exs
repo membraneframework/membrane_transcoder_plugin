@@ -35,7 +35,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
   @test_cases @video_cases ++ @audio_cases
 
   Enum.map(@test_cases, fn test_case ->
-    test "if #{inspect(test_case.input_format)} stream is transcoded to #{inspect(test_case.output_format)}" do
+    test "if transcoder support #{inspect(test_case.input_format)} input and #{inspect(test_case.output_format)} output" do
       pid = Pipeline.start_link_supervised!()
 
       spec =
