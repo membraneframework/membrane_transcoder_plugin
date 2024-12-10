@@ -14,7 +14,7 @@ defmodule Membrane.Transcoder do
   * `Membrane.AAC`
   * `Membrane.Opus`
   * `Membrane.RawAudio`
-  * `Membrane.RemoteStream{content_type: Membrane.Opus}`
+  * `Membrane.RemoteStream{content_type: Membrane.Opus}` (only as input stream)
 
   Please note that not all the conversions are possible!
   """
