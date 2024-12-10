@@ -23,7 +23,7 @@ end
 ```
 
 ## Usage
-In the `examples/vp8_to_h264.exs` file there is and example showing how to use 
+In the `examples/vp8_to_h264.exs` file there is an example showing how to use 
 the `Membrane.Transcoder` to convert video encoded with VP8 into H264 encoded video.
 You can run it with the following command:
 ```

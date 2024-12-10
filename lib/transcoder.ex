@@ -64,7 +64,7 @@ defmodule Membrane.Transcoder do
                 * a struct being a Membrane stream format,
                 * a module in which Membrane stream format struct is defined,
                 * a function which receives input stream format as an input argument
-                and is supposed to return the desired output stream format.
+                and is supposed to return the desired output stream format or its module.
                 """
               ]
 
