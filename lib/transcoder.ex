@@ -1,6 +1,7 @@
 defmodule Membrane.Transcoder do
   @moduledoc """
   Provides transcoding capabilities for audio and video streams in Membrane.
+
   The bin takes an incoming stream on its input and converts it into the desired one
   as specified by the option. Transcoding is applied only if it is neccessary.
   The following video stream formats are supported:
@@ -14,6 +15,8 @@ defmodule Membrane.Transcoder do
   * `Membrane.Opus`
   * `Membrane.RawAudio`
   * `Membrane.RemoteStream{content_type: Membrane.Opus}`
+
+  Please note that not all the conversions are possible!
   """
   use Membrane.Bin
 
@@ -60,9 +63,8 @@ defmodule Membrane.Transcoder do
                 Can be either:
                 * a struct being a Membrane stream format,
                 * a module in which Membrane stream format struct is defined,
-                * a `t:stream_format_resolver()` which is a function which receives
-                  input stream format as an input argument and is supposed to return
-                  the desired output stream format.
+                * a function which receives input stream format as an input argument
+                and is supposed to return the desired output stream format.
                 """
               ]
 
