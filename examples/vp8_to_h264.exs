@@ -5,9 +5,9 @@ Mix.install([
 ])
 
 defmodule Example do
-alias Membrane.RCPipeline
-require Membrane.RCPipeline, as: RCPipeline
-import Membrane.ChildrenSpec
+  alias Membrane.RCPipeline
+  require Membrane.RCPipeline, as: RCPipeline
+  import Membrane.ChildrenSpec
 
   def convert(input_file, output_file) do
     pipeline = RCPipeline.start_link!()
@@ -26,5 +26,6 @@ import Membrane.ChildrenSpec
     RCPipeline.terminate(pipeline)
   end
 end
+
 File.mkdir("tmp")
 Example.convert(Path.join("./test/fixtures", "video.ivf"), Path.join("./tmp", "video.h264"))
