@@ -3,7 +3,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
   import Membrane.Testing.Assertions
   import Membrane.ChildrenSpec
 
-  alias Membrane.{H264, H265, VP8, RawVideo, AAC, Opus, RawAudio}
+  alias Membrane.{AAC, H264, H265, Opus, RawAudio, RawVideo, VP8}
   alias Membrane.Testing.Pipeline
   alias Membrane.Transcoder.Support.Preprocessors
 

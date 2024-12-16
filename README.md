@@ -22,6 +22,18 @@ def deps do
 end
 ```
 
+## Usage
+In the `examples/vp8_to_h264.exs` file there is an example showing how to use 
+the `Membrane.Transcoder` to convert video encoded with VP8 into H264 encoded video.
+You can run it with the following command:
+```
+elixir vp8_to_h264.exs
+```
+
+Then you can inspect the format of the output file with e.g. `ffprobe` and confirm that it stores video encoded with H.264:
+```
+ffprobe tmp/video.ivf
+```
 ## Copyright and License
 
 Copyright 2020, [Software Mansion](https://swmansion.com/?utm_source=git&utm_medium=readme&utm_campaign=membrane_template_plugin)
