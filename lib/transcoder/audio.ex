@@ -53,9 +53,18 @@ defmodule Membrane.Transcoder.Audio do
 
   defp do_plug_audio_transcoding(builder, input_format, output_format) do
     builder
+    |> maybe_plug_parser(input_format)
     |> maybe_plug_decoder(input_format)
     |> maybe_plug_resampler(input_format, output_format)
     |> maybe_plug_encoder(output_format)
+  end
+
+  defp maybe_plug_parser(builder, %AAC{}) do
+    builder |> child(:aac_parser, AAC.Parser)
+  end
+
+  defp maybe_plug_parser(builder, _input_format) do
+    builder
   end
 
   defp maybe_plug_decoder(builder, %Opus{}) do
