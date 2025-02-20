@@ -67,7 +67,6 @@ defmodule Membrane.Transcoder.IntegrationTest do
       do: {[stream_format: {:output, state.format}], state}
   end
 
-  @tag :a
   test "a" do
     for format <- [
           %Membrane.AAC{channels: 1},
