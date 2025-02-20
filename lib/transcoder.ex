@@ -43,10 +43,16 @@ defmodule Membrane.Transcoder do
   """
   @type stream_format_module :: H264 | H265 | VP8 | RawVideo | AAC | Opus | RawAudio
 
+  @type transcoding_options :: [enforce_transcoding?: boolean()]
+
   @typedoc """
   Describes a function which can be used to provide output format based on the input format.
   """
-  @type stream_format_resolver :: (stream_format() -> stream_format() | stream_format_module())
+  @type stream_format_resolver :: (stream_format() ->
+                                     stream_format()
+                                     | {stream_format(), transcoding_options()}
+                                     | stream_format_module()
+                                     | {stream_format_module(), transcoding_options()})
 
   def_input_pad :input,
     accepted_format: format when Audio.is_audio_format(format) or Video.is_video_format(format)
@@ -55,7 +61,12 @@ defmodule Membrane.Transcoder do
     accepted_format: format when Audio.is_audio_format(format) or Video.is_video_format(format)
 
   def_options output_stream_format: [
-                spec: stream_format() | stream_format_module() | stream_format_resolver(),
+                spec:
+                  stream_format()
+                  | {stream_format(), transcoding_options()}
+                  | stream_format_module()
+                  | {stream_format_module(), transcoding_options()}
+                  | stream_format_resolver(),
                 description: """
                 An option specifying desired output format.
                 Can be either:
@@ -78,7 +89,10 @@ defmodule Membrane.Transcoder do
     state =
       opts
       |> Map.from_struct()
-      |> Map.put(:input_stream_format, nil)
+      |> Map.merge(%{
+        input_stream_format: nil,
+        enforce_transcoding?: false
+      })
 
     {[spec: spec], state}
   end
@@ -96,7 +110,11 @@ defmodule Membrane.Transcoder do
 
     spec =
       get_child(:forwarding_filter)
-      |> plug_transcoding(format, state.output_stream_format)
+      |> plug_transcoding(
+        format,
+        state.output_stream_format,
+        state.enforce_transcoding?
+      )
       |> get_child(:output_funnel)
 
     {[spec: spec], state}
@@ -127,6 +145,14 @@ defmodule Membrane.Transcoder do
 
   defp resolve_output_stream_format(state) do
     case state.output_stream_format do
+      {stream_format, options} ->
+        [enforce_transcoding?: enforce_transcoding?] =
+          options
+          |> Keyword.validate!(enforce_transcoding?: false)
+
+        %{state | enforce_transcoding?: enforce_transcoding?, output_stream_format: stream_format}
+        |> resolve_output_stream_format()
+
       format when is_struct(format) ->
         state
 
@@ -139,13 +165,15 @@ defmodule Membrane.Transcoder do
     end
   end
 
-  defp plug_transcoding(builder, input_format, output_format)
+  defp plug_transcoding(builder, input_format, output_format, enforce_transcoding?)
        when Audio.is_audio_format(input_format) do
-    builder |> Audio.plug_audio_transcoding(input_format, output_format)
+    builder
+    |> Audio.plug_audio_transcoding(input_format, output_format, enforce_transcoding?)
   end
 
-  defp plug_transcoding(builder, input_format, output_format)
+  defp plug_transcoding(builder, input_format, output_format, enforce_transcoding?)
        when Video.is_video_format(input_format) do
-    builder |> Video.plug_video_transcoding(input_format, output_format)
+    builder
+    |> Video.plug_video_transcoding(input_format, output_format, enforce_transcoding?)
   end
 end

@@ -16,14 +16,20 @@ defmodule Membrane.Transcoder.Video do
   @spec plug_video_transcoding(
           ChildrenSpec.builder(),
           video_stream_format(),
-          video_stream_format()
+          video_stream_format(),
+          boolean()
         ) :: ChildrenSpec.builder()
-  def plug_video_transcoding(builder, input_format, output_format)
+  def plug_video_transcoding(builder, input_format, output_format, enforce_transcoding?)
       when is_video_format(input_format) and is_video_format(output_format) do
-    do_plug_video_transcoding(builder, input_format, output_format)
+    do_plug_video_transcoding(builder, input_format, output_format, enforce_transcoding?)
   end
 
-  defp do_plug_video_transcoding(builder, %h26x{}, %h26x{} = output_format)
+  defp do_plug_video_transcoding(
+         builder,
+         %h26x{},
+         %h26x{} = output_format,
+         false = _enforce_transcoding?
+       )
        when h26x in [H264, H265] do
     parser =
       h26x
@@ -36,7 +42,12 @@ defmodule Membrane.Transcoder.Video do
     builder |> child(:h264_parser, parser)
   end
 
-  defp do_plug_video_transcoding(builder, %format_module{}, %format_module{}) do
+  defp do_plug_video_transcoding(
+         builder,
+         %format_module{},
+         %format_module{},
+         false = _enforce_transcoding?
+       ) do
     Membrane.Logger.debug("""
     This bin will only forward buffers, as the input stream format is the same type as the output stream format.
     """)
@@ -44,7 +55,7 @@ defmodule Membrane.Transcoder.Video do
     builder
   end
 
-  defp do_plug_video_transcoding(builder, input_format, output_format) do
+  defp do_plug_video_transcoding(builder, input_format, output_format, _enforce_transcoding?) do
     builder
     |> maybe_plug_parser_and_decoder(input_format)
     |> maybe_plug_encoder_and_parser(output_format)

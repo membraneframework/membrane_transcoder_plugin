@@ -4,7 +4,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
   import Membrane.ChildrenSpec
 
   alias Membrane.{AAC, H264, H265, Opus, RawAudio, RawVideo, VP8}
-  alias Membrane.Testing.Pipeline
+  alias Membrane.Testing
   alias Membrane.Transcoder.Support.Preprocessors
 
   @video_inputs [
@@ -36,7 +36,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
 
   Enum.map(@test_cases, fn test_case ->
     test "if transcoder support #{inspect(test_case.input_format)} input and #{inspect(test_case.output_format)} output" do
-      pid = Pipeline.start_link_supervised!()
+      pid = Testing.Pipeline.start_link_supervised!()
 
       spec =
         child(%Membrane.File.Source{
@@ -44,12 +44,63 @@ defmodule Membrane.Transcoder.IntegrationTest do
         })
         |> then(unquote(test_case.preprocess))
         |> child(%Membrane.Transcoder{output_stream_format: unquote(test_case.output_format)})
-        |> child(:sink, Membrane.Testing.Sink)
+        |> child(:sink, Testing.Sink)
 
-      Pipeline.execute_actions(pid, spec: spec)
+      Testing.Pipeline.execute_actions(pid, spec: spec)
 
       assert_sink_stream_format(pid, :sink, %unquote(test_case.output_format){})
-      Pipeline.terminate(pid)
+      Testing.Pipeline.terminate(pid)
     end
   end)
+
+  defmodule FormatSource do
+    use Membrane.Source
+
+    def_output_pad :output, accepted_format: _any, flow_control: :push
+    def_options format: []
+
+    @impl true
+    def handle_init(_ctx, opts), do: {[], opts |> Map.from_struct()}
+
+    @impl true
+    def handle_playing(_ctx, state),
+      do: {[stream_format: {:output, state.format}], state}
+  end
+
+  @tag :a
+  test "a" do
+    for format <- [
+          %Membrane.AAC{channels: 1},
+          %Membrane.H264{alignment: :au, stream_structure: :annexb}
+        ],
+        enforce_transcoding? <- [true, false] do
+      spec =
+        child(:source, %FormatSource{format: format})
+        |> child(:transcoder, %Membrane.Transcoder{
+          output_stream_format: {format, enforce_transcoding?: enforce_transcoding?}
+        })
+        |> child(:sink, Testing.Sink)
+
+      pipeline = Testing.Pipeline.start_link_supervised!(spec: spec)
+
+      Process.sleep(500)
+
+      case format do
+        %H264{} -> [:h264_encoder, :h264_decoder]
+        %AAC{} -> [:aac_encoder, :aac_decoder]
+      end
+      |> Enum.each(fn child_name ->
+        get_child_result = Testing.Pipeline.get_child_pid(pipeline, [:transcoder, child_name])
+
+        if enforce_transcoding? do
+          assert {:ok, child_pid} = get_child_result
+          assert is_pid(child_pid)
+        else
+          assert {:error, :child_not_found} = get_child_result
+        end
+      end)
+
+      Testing.Pipeline.terminate(pipeline)
+    end
+  end
 end
