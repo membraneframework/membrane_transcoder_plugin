@@ -43,16 +43,10 @@ defmodule Membrane.Transcoder do
   """
   @type stream_format_module :: H264 | H265 | VP8 | RawVideo | AAC | Opus | RawAudio
 
-  @type transcoding_options :: [enforce_transcoding?: boolean()]
-
   @typedoc """
   Describes a function which can be used to provide output format based on the input format.
   """
-  @type stream_format_resolver :: (stream_format() ->
-                                     stream_format()
-                                     | {stream_format(), transcoding_options()}
-                                     | stream_format_module()
-                                     | {stream_format_module(), transcoding_options()})
+  @type stream_format_resolver :: (stream_format() -> stream_format() | stream_format_module())
 
   def_input_pad :input,
     accepted_format: format when Audio.is_audio_format(format) or Video.is_video_format(format)
@@ -63,17 +57,28 @@ defmodule Membrane.Transcoder do
   def_options output_stream_format: [
                 spec:
                   stream_format()
-                  | {stream_format(), transcoding_options()}
                   | stream_format_module()
-                  | {stream_format_module(), transcoding_options()}
                   | stream_format_resolver(),
                 description: """
                 An option specifying desired output format.
+
                 Can be either:
                 * a struct being a Membrane stream format,
                 * a module in which Membrane stream format struct is defined,
                 * a function which receives input stream format as an input argument
                 and is supposed to return the desired output stream format or its module.
+                """
+              ],
+              enforce_transcoding?: [
+                spec: boolean() | (stream_format() -> boolean()),
+                default: false,
+                description: """
+                If set to `true`, the input media stream will be decoded and encoded, even
+                if the input stream format and the output stream format are the same type.
+
+                Cen be either:
+                * a boolean,
+                * a function that receives the input stream format and returns a boolean.
                 """
               ]
 
@@ -90,8 +95,7 @@ defmodule Membrane.Transcoder do
       opts
       |> Map.from_struct()
       |> Map.merge(%{
-        input_stream_format: nil,
-        enforce_transcoding?: false
+        input_stream_format: nil
       })
 
     {[spec: spec], state}
@@ -107,6 +111,11 @@ defmodule Membrane.Transcoder do
     state =
       %{state | input_stream_format: format}
       |> resolve_output_stream_format()
+
+    state =
+      with %{enforce_transcoding?: f} when is_function(f) <- state do
+        %{state | enforce_transcoding?: f.(format)}
+      end
 
     spec =
       get_child(:forwarding_filter)
@@ -145,14 +154,6 @@ defmodule Membrane.Transcoder do
 
   defp resolve_output_stream_format(state) do
     case state.output_stream_format do
-      {stream_format, options} ->
-        [enforce_transcoding?: enforce_transcoding?] =
-          options
-          |> Keyword.validate!(enforce_transcoding?: false)
-
-        %{state | enforce_transcoding?: enforce_transcoding?, output_stream_format: stream_format}
-        |> resolve_output_stream_format()
-
       format when is_struct(format) ->
         state
 

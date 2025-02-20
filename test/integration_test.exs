@@ -77,7 +77,8 @@ defmodule Membrane.Transcoder.IntegrationTest do
       spec =
         child(:source, %FormatSource{format: format})
         |> child(:transcoder, %Membrane.Transcoder{
-          output_stream_format: {format, enforce_transcoding?: enforce_transcoding?}
+          output_stream_format: format,
+          enforce_transcoding?: enforce_transcoding?
         })
         |> child(:sink, Testing.Sink)
 
