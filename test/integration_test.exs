@@ -67,7 +67,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
       do: {[stream_format: {:output, state.format}], state}
   end
 
-  test "a" do
+  test "if encoder and decoder are spawned or not, depending on the value of `enforce_transcoding?` option" do
     for format <- [
           %Membrane.AAC{channels: 1},
           %Membrane.H264{alignment: :au, stream_structure: :annexb}
