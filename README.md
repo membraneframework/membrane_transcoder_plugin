@@ -17,7 +17,7 @@ The package can be installed by adding `membrane_transcoder_plugin` to your list
 ```elixir
 def deps do
   [
-    {:membrane_transcoder_plugin, "~> 0.1.2"}
+    {:membrane_transcoder_plugin, "~> 0.1.3"}
   ]
 end
 ```

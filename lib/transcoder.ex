@@ -55,14 +55,30 @@ defmodule Membrane.Transcoder do
     accepted_format: format when Audio.is_audio_format(format) or Video.is_video_format(format)
 
   def_options output_stream_format: [
-                spec: stream_format() | stream_format_module() | stream_format_resolver(),
+                spec:
+                  stream_format()
+                  | stream_format_module()
+                  | stream_format_resolver(),
                 description: """
                 An option specifying desired output format.
+
                 Can be either:
                 * a struct being a Membrane stream format,
                 * a module in which Membrane stream format struct is defined,
                 * a function which receives input stream format as an input argument
                 and is supposed to return the desired output stream format or its module.
+                """
+              ],
+              enforce_transcoding?: [
+                spec: boolean() | (stream_format() -> boolean()),
+                default: false,
+                description: """
+                If set to `true`, the input media stream will be decoded and encoded, even
+                if the input stream format and the output stream format are the same type.
+
+                Can be either:
+                * a boolean,
+                * a function that receives the input stream format and returns a boolean.
                 """
               ]
 
@@ -78,7 +94,9 @@ defmodule Membrane.Transcoder do
     state =
       opts
       |> Map.from_struct()
-      |> Map.put(:input_stream_format, nil)
+      |> Map.merge(%{
+        input_stream_format: nil
+      })
 
     {[spec: spec], state}
   end
@@ -94,9 +112,18 @@ defmodule Membrane.Transcoder do
       %{state | input_stream_format: format}
       |> resolve_output_stream_format()
 
+    state =
+      with %{enforce_transcoding?: f} when is_function(f) <- state do
+        %{state | enforce_transcoding?: f.(format)}
+      end
+
     spec =
       get_child(:forwarding_filter)
-      |> plug_transcoding(format, state.output_stream_format)
+      |> plug_transcoding(
+        format,
+        state.output_stream_format,
+        state.enforce_transcoding?
+      )
       |> get_child(:output_funnel)
 
     {[spec: spec], state}
@@ -139,13 +166,15 @@ defmodule Membrane.Transcoder do
     end
   end
 
-  defp plug_transcoding(builder, input_format, output_format)
+  defp plug_transcoding(builder, input_format, output_format, enforce_transcoding?)
        when Audio.is_audio_format(input_format) do
-    builder |> Audio.plug_audio_transcoding(input_format, output_format)
+    builder
+    |> Audio.plug_audio_transcoding(input_format, output_format, enforce_transcoding?)
   end
 
-  defp plug_transcoding(builder, input_format, output_format)
+  defp plug_transcoding(builder, input_format, output_format, enforce_transcoding?)
        when Video.is_video_format(input_format) do
-    builder |> Video.plug_video_transcoding(input_format, output_format)
+    builder
+    |> Video.plug_video_transcoding(input_format, output_format, enforce_transcoding?)
   end
 end
