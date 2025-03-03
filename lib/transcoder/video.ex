@@ -114,7 +114,11 @@ defmodule Membrane.Transcoder.Video do
 
   defp maybe_plug_encoder_and_parser(builder, %VP8{}) do
     cpu_quota = :erlang.system_info(:cpu_quota)
-    number_of_threads = if cpu_quota != :unknown, do: cpu_quota, else: :erlang.system_info(:logical_processors_available)
+
+    number_of_threads =
+      if cpu_quota != :unknown,
+        do: cpu_quota,
+        else: :erlang.system_info(:logical_processors_available)
 
     builder |> child(:vp8_encoder, %VP8.Encoder{g_threads: number_of_threads, cpu_used: 15})
   end
