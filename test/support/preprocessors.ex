@@ -20,7 +20,8 @@ defmodule Membrane.Transcoder.Support.Preprocessors do
 
   @spec parse_h264(Membrane.ChildrenSpec.builder()) :: Membrane.ChildrenSpec.builder()
   def parse_h264(link_builder) do
-    child(link_builder, %Membrane.H264.Parser{
+    link_builder
+    |> child(%Membrane.H264.Parser{
       output_alignment: :au,
       output_stream_structure: :annexb,
       generate_best_effort_timestamps: %{framerate: {30, 1}}
