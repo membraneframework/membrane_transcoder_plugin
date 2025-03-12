@@ -38,7 +38,8 @@ defmodule Membrane.Transcoder.Plugin.Mixfile do
   defp deps do
     [
       # {:membrane_core, "~> 1.2"},
-      {:membrane_core, path: "../membrane_core", override: true},
+      {:membrane_core,
+       github: "membraneframework/membrane_core", branch: "changes-in-connector", override: true},
       {:membrane_opus_plugin, "~> 0.20.3"},
       {:membrane_aac_plugin, "~> 0.19.0"},
       {:membrane_aac_fdk_plugin, "~> 0.18.0"},

@@ -22,7 +22,7 @@ defmodule Membrane.Transcoder do
   require __MODULE__.Video
   require Membrane.Logger
 
-  alias __MODULE__.{Audio, ForwardingFilter, Video}
+  alias __MODULE__.{Audio, Video}
   alias Membrane.{AAC, Funnel, H264, H265, Opus, RawAudio, RawVideo, RemoteStream, VP8}
 
   @typedoc """
@@ -99,12 +99,6 @@ defmodule Membrane.Transcoder do
       })
 
     {[spec: spec], state}
-  end
-
-  @impl true
-  def handle_playing(_ctx, state) do
-    IO.inspect(PLAYING)
-    {[], state}
   end
 
   @impl true
