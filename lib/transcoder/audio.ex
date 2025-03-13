@@ -35,16 +35,16 @@ defmodule Membrane.Transcoder.Audio do
           audio_stream_format(),
           boolean()
         ) :: ChildrenSpec.builder()
-  def plug_audio_transcoding(builder, input_format, output_format, enforce_transcoding?)
+  def plug_audio_transcoding(builder, input_format, output_format, force_transcoding?)
       when is_audio_format(input_format) and is_audio_format(output_format) do
-    do_plug_audio_transcoding(builder, input_format, output_format, enforce_transcoding?)
+    do_plug_audio_transcoding(builder, input_format, output_format, force_transcoding?)
   end
 
   defp do_plug_audio_transcoding(
          builder,
          %format_module{},
          %format_module{},
-         false = _enforce_transcoding?
+         false = _force_transcoding?
        ) do
     Membrane.Logger.debug("""
     This bin will only forward buffers, as the input stream format is the same as the output stream format.
@@ -57,12 +57,12 @@ defmodule Membrane.Transcoder.Audio do
          builder,
          %RemoteStream{content_format: Opus},
          %Opus{},
-         false = _enforce_transcoding?
+         false = _force_transcoding?
        ) do
     builder |> child(:opus_parser, Opus.Parser)
   end
 
-  defp do_plug_audio_transcoding(builder, input_format, output_format, _enforce_transcoding?) do
+  defp do_plug_audio_transcoding(builder, input_format, output_format, _force_transcoding?) do
     builder
     |> maybe_plug_parser(input_format)
     |> maybe_plug_decoder(input_format)

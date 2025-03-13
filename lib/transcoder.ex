@@ -69,7 +69,7 @@ defmodule Membrane.Transcoder do
                 and is supposed to return the desired output stream format or its module.
                 """
               ],
-              enforce_transcoding?: [
+              force_transcoding?: [
                 spec: boolean() | (stream_format() -> boolean()),
                 default: false,
                 description: """
@@ -113,8 +113,8 @@ defmodule Membrane.Transcoder do
       |> resolve_output_stream_format()
 
     state =
-      with %{enforce_transcoding?: f} when is_function(f) <- state do
-        %{state | enforce_transcoding?: f.(format)}
+      with %{force_transcoding?: f} when is_function(f) <- state do
+        %{state | force_transcoding?: f.(format)}
       end
 
     spec =
@@ -122,7 +122,7 @@ defmodule Membrane.Transcoder do
       |> plug_transcoding(
         format,
         state.output_stream_format,
-        state.enforce_transcoding?
+        state.force_transcoding?
       )
       |> get_child(:output_funnel)
 
@@ -166,15 +166,15 @@ defmodule Membrane.Transcoder do
     end
   end
 
-  defp plug_transcoding(builder, input_format, output_format, enforce_transcoding?)
+  defp plug_transcoding(builder, input_format, output_format, force_transcoding?)
        when Audio.is_audio_format(input_format) do
     builder
-    |> Audio.plug_audio_transcoding(input_format, output_format, enforce_transcoding?)
+    |> Audio.plug_audio_transcoding(input_format, output_format, force_transcoding?)
   end
 
-  defp plug_transcoding(builder, input_format, output_format, enforce_transcoding?)
+  defp plug_transcoding(builder, input_format, output_format, force_transcoding?)
        when Video.is_video_format(input_format) do
     builder
-    |> Video.plug_video_transcoding(input_format, output_format, enforce_transcoding?)
+    |> Video.plug_video_transcoding(input_format, output_format, force_transcoding?)
   end
 end
