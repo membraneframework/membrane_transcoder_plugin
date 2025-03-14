@@ -76,7 +76,7 @@ defmodule Membrane.Transcoder do
                 If set to `true`, the input media stream will be decoded and encoded, even
                 if the input stream format and the output stream format are the same type.
 
-                Cen be either:
+                Can be either:
                 * a boolean,
                 * a function that receives the input stream format and returns a boolean.
                 """
