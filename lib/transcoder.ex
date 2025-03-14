@@ -22,7 +22,7 @@ defmodule Membrane.Transcoder do
   require __MODULE__.Video
   require Membrane.Logger
 
-  alias __MODULE__.{Audio, ForwardingFilter, Video}
+  alias __MODULE__.{Audio, Video}
   alias Membrane.{AAC, Funnel, H264, H265, Opus, RawAudio, RawVideo, RemoteStream, VP8}
 
   @typedoc """
@@ -86,7 +86,7 @@ defmodule Membrane.Transcoder do
   def handle_init(_ctx, opts) do
     spec = [
       bin_input()
-      |> child(:forwarding_filter, ForwardingFilter),
+      |> child(:connector, %Membrane.Connector{notify_on_stream_format?: true}),
       child(:output_funnel, Funnel)
       |> bin_output()
     ]
@@ -102,12 +102,8 @@ defmodule Membrane.Transcoder do
   end
 
   @impl true
-  def handle_child_notification(
-        {:stream_format, format},
-        :forwarding_filter,
-        _ctx,
-        %{input_stream_format: nil} = state
-      ) do
+  def handle_child_notification({:stream_format, _pad, format}, :connector, _ctx, state)
+      when state.input_stream_format == nil do
     state =
       %{state | input_stream_format: format}
       |> resolve_output_stream_format()
@@ -118,7 +114,7 @@ defmodule Membrane.Transcoder do
       end
 
     spec =
-      get_child(:forwarding_filter)
+      get_child(:connector)
       |> plug_transcoding(
         format,
         state.output_stream_format,
@@ -130,16 +126,14 @@ defmodule Membrane.Transcoder do
   end
 
   @impl true
-  def handle_child_notification(
-        {:stream_format, new_format},
-        :forwarding_filter,
-        _ctx,
-        %{input_stream_format: non_nil_stream_format} = state
-      ) do
-    if new_format != non_nil_stream_format do
+  def handle_child_notification({:stream_format, _pad, new_format}, :connector, _ctx, state) do
+    %new_stream_format_module{} = new_format
+    %old_stream_format_module{} = state.input_stream_format
+
+    if new_stream_format_module != old_stream_format_module do
       raise """
       Received new stream format on transcoder's input: #{inspect(new_format)}
-      which doesn't match the first received input stream format: #{inspect(non_nil_stream_format)}
+      which doesn't match the first received input stream format: #{inspect(state.input_stream_format)}
       Transcoder doesn't support updating the input stream format.
       """
     end
