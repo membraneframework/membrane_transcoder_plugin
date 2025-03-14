@@ -67,14 +67,14 @@ defmodule Membrane.Transcoder.IntegrationTest do
       do: {[stream_format: {:output, state.format}], state}
   end
 
-  test "if encoder and decoder are spawned or not, depending on the value of `enforce_transcoding?` option" do
+  test "if encoder and decoder are spawned or not, depending on the value of `force_transcoding?` option" do
     for format <- [%AAC{channels: 1}, %H264{alignment: :au, stream_structure: :annexb}],
-        enforce_transcoding? <- [true, false] do
+        force_transcoding? <- [true, false] do
       spec =
         child(:source, %FormatSource{format: format})
         |> child(:transcoder, %Membrane.Transcoder{
           output_stream_format: format,
-          enforce_transcoding?: enforce_transcoding?
+          force_transcoding?: force_transcoding?
         })
         |> child(:sink, Testing.Sink)
 
@@ -89,7 +89,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
       |> Enum.each(fn child_name ->
         get_child_result = Testing.Pipeline.get_child_pid(pipeline, [:transcoder, child_name])
 
-        if enforce_transcoding? do
+        if force_transcoding? do
           assert {:ok, child_pid} = get_child_result
           assert is_pid(child_pid)
         else
