@@ -3,7 +3,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
   import Membrane.Testing.Assertions
   import Membrane.ChildrenSpec
 
-  alias Membrane.{AAC, H264, H265, Opus, RawAudio, RawVideo, VP8}
+  alias Membrane.{AAC, H264, H265, Opus, RawAudio, RawVideo, VP8, VP9}
   alias Membrane.Testing
   alias Membrane.Transcoder.Support.Preprocessors
 
@@ -11,9 +11,10 @@ defmodule Membrane.Transcoder.IntegrationTest do
     %{input_format: H264, input_file: "video.h264", preprocess: &Preprocessors.parse_h264/1},
     %{input_format: RawVideo, input_file: "video.h264", preprocess: &Preprocessors.decode_h264/1},
     %{input_format: H265, input_file: "video.h265", preprocess: &Preprocessors.parse_h265/1},
-    %{input_format: VP8, input_file: "video.ivf", preprocess: &Preprocessors.parse_vp8/1}
+    %{input_format: VP8, input_file: "video_vp8.ivf", preprocess: &Preprocessors.parse_vpx/1},
+    %{input_format: VP9, input_file: "video_vp9.ivf", preprocess: &Preprocessors.parse_vpx/1}
   ]
-  @video_outputs [RawVideo, H264, H265, VP8]
+  @video_outputs [RawVideo, H264, H265, VP8, VP9]
   @video_cases for input <- @video_inputs,
                    output <- @video_outputs,
                    do: Map.put(input, :output_format, output)

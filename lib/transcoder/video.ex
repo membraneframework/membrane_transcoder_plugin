@@ -3,14 +3,14 @@ defmodule Membrane.Transcoder.Video do
 
   import Membrane.ChildrenSpec
   require Membrane.Logger
-  alias Membrane.{ChildrenSpec, H264, H265, RawVideo, RemoteStream, VP8}
+  alias Membrane.{ChildrenSpec, H264, H265, RawVideo, RemoteStream, VP8, VP9}
 
-  @type video_stream_format :: VP8.t() | H264.t() | H265.t() | RawVideo.t()
+  @type video_stream_format :: VP8.t() | VP9.t() | H264.t() | H265.t() | RawVideo.t()
 
   defguard is_video_format(format)
            when is_struct(format) and
-                  (format.__struct__ in [VP8, H264, H265, RawVideo] or
-                     (format.__struct__ == RemoteStream and format.content_format == VP8 and
+                  (format.__struct__ in [VP8, VP9, H264, H265, RawVideo] or
+                     (format.__struct__ == RemoteStream and format.content_format in [VP8, VP9] and
                         format.type == :packetized))
 
   @spec plug_video_transcoding(
@@ -79,15 +79,18 @@ defmodule Membrane.Transcoder.Video do
     |> child(:h265_decoder, %H265.FFmpeg.Decoder{})
   end
 
-  defp maybe_plug_parser_and_decoder(builder, %VP8{}) do
-    builder |> child(:vp8_decoder, %VP8.Decoder{})
+  defp maybe_plug_parser_and_decoder(builder, %vpx{}) when vpx in [VP8, VP9] do
+    decoder_module = Module.concat(vpx, Decoder)
+    builder |> child(:vp8_decoder, decoder_module)
   end
 
   defp maybe_plug_parser_and_decoder(builder, %RemoteStream{
-         content_format: VP8,
+         content_format: vpx,
          type: :packetized
-       }) do
-    builder |> child(:vp8_decoder, %VP8.Decoder{})
+       })
+       when vpx in [VP8, VP9] do
+    decoder_module = Module.concat(vpx, Decoder)
+    builder |> child(:vp8_decoder, decoder_module)
   end
 
   defp maybe_plug_parser_and_decoder(builder, %RawVideo{}) do
@@ -112,7 +115,7 @@ defmodule Membrane.Transcoder.Video do
     })
   end
 
-  defp maybe_plug_encoder_and_parser(builder, %VP8{}) do
+  defp maybe_plug_encoder_and_parser(builder, %vpx{}) when vpx in [VP8, VP9] do
     cpu_quota = :erlang.system_info(:cpu_quota)
 
     number_of_threads =
@@ -120,7 +123,8 @@ defmodule Membrane.Transcoder.Video do
         do: cpu_quota,
         else: :erlang.system_info(:logical_processors_available)
 
-    builder |> child(:vp8_encoder, %VP8.Encoder{g_threads: number_of_threads, cpu_used: 15})
+    encoder = Module.concat(vpx, Encoder) |> struct!(g_threads: number_of_threads, cpu_used: 15)
+    builder |> child(:vp8_encoder, encoder)
   end
 
   defp maybe_plug_encoder_and_parser(builder, %RawVideo{}) do
