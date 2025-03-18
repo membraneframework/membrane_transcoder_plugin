@@ -8,11 +8,15 @@ defmodule Membrane.Transcoder do
   * `Membrane.H264`
   * `Membrane.H265`
   * `Membrane.VP8`
+  * `Membrane.VP9`
   * `Membrane.RawVideo`
+  * `Membrane.RemoteStream{content_type: Membrane.VP8}` (only as an input stream)
+  * `Membrane.RemoteStream{content_type: Membrane.VP9}` (only as an input stream)
 
   The following audio stream formats are supported:
   * `Membrane.AAC`
   * `Membrane.Opus`
+  * `Membrane.MP3`
   * `Membrane.RawAudio`
   * `Membrane.RemoteStream{content_type: Membrane.Opus}` (only as an input stream)
   """
@@ -23,7 +27,7 @@ defmodule Membrane.Transcoder do
   require Membrane.Logger
 
   alias __MODULE__.{Audio, Video}
-  alias Membrane.{AAC, Funnel, H264, H265, Opus, RawAudio, RawVideo, RemoteStream, VP8}
+  alias Membrane.{AAC, Funnel, H264, H265, Opus, RawAudio, RawVideo, RemoteStream, VP8, VP9}
 
   @typedoc """
   Describes stream formats acceptable on the bin's input and output.
@@ -32,6 +36,7 @@ defmodule Membrane.Transcoder do
           H264.t()
           | H265.t()
           | VP8.t()
+          | VP9.t()
           | RawVideo.t()
           | AAC.t()
           | Opus.t()
@@ -41,7 +46,7 @@ defmodule Membrane.Transcoder do
   @typedoc """
   Describes stream format modules that can be used to define inputs and outputs of the bin.
   """
-  @type stream_format_module :: H264 | H265 | VP8 | RawVideo | AAC | Opus | RawAudio
+  @type stream_format_module :: H264 | H265 | VP8 | VP9 | RawVideo | AAC | Opus | RawAudio
 
   @typedoc """
   Describes a function which can be used to provide output format based on the input format.
