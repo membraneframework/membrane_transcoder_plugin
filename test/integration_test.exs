@@ -29,7 +29,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
     %{input_format: Opus, input_file: "audio.opus", preprocess: &Preprocessors.parse_opus/1},
     %{input_format: MPEGAudio, input_file: "audio.mp3", preprocess: &Preprocessors.noop/1}
   ]
-  @audio_outputs [RawAudio, AAC, Opus]
+  @audio_outputs [RawAudio, AAC, Opus, MPEGAudio]
   @audio_cases for input <- @audio_inputs,
                    output <- @audio_outputs,
                    do: Map.put(input, :output_format, output)

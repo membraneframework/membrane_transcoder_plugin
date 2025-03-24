@@ -140,10 +140,9 @@ defmodule Membrane.Transcoder.Audio do
          input_format,
          %MPEGAudio{}
        ) do
-    if Map.get(input_format, :sample_rate) != @mpeg_raw_audio_format.sample_rate and
-         input_format.sample_format ==
-           @mpeg_raw_audio_format.sample_format and
-         input_format.channels ==
+    if Map.get(input_format, :sample_rate) != @mpeg_raw_audio_format.sample_rate or
+         Map.get(input_format, :sample_format) != @mpeg_raw_audio_format.sample_format or
+         Map.get(input_format, :channels) !=
            @mpeg_raw_audio_format.channels do
       builder
       |> child(:resampler, %Membrane.FFmpeg.SWResample.Converter{
@@ -167,7 +166,7 @@ defmodule Membrane.Transcoder.Audio do
   end
 
   defp maybe_plug_encoder(builder, %MPEGAudio{}) do
-    builder |> child(:opus_encoder, Membrane.MP3.Lame.Encoder)
+    builder |> child(:mp3_encoder, Membrane.MP3.Lame.Encoder)
   end
 
   defp maybe_plug_encoder(builder, %RawAudio{}) do
