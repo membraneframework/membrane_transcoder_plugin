@@ -3,7 +3,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
   import Membrane.Testing.Assertions
   import Membrane.ChildrenSpec
 
-  alias Membrane.{AAC, H264, H265, Opus, RawAudio, RawVideo, VP8, VP9}
+  alias Membrane.{AAC, H264, H265, Opus, RawAudio, RawVideo, VP8, VP9, MPEGAudio}
   alias Membrane.Testing
   alias Membrane.Transcoder.Support.Preprocessors
 
@@ -26,7 +26,8 @@ defmodule Membrane.Transcoder.IntegrationTest do
       preprocess: &Preprocessors.parse_raw_audio/1
     },
     %{input_format: AAC, input_file: "audio.aac", preprocess: &Preprocessors.parse_aac/1},
-    %{input_format: Opus, input_file: "audio.opus", preprocess: &Preprocessors.parse_opus/1}
+    %{input_format: Opus, input_file: "audio.opus", preprocess: &Preprocessors.parse_opus/1},
+    %{input_format: MPEGAudio, input_file: "audio.mp3", preprocess: &Preprocessors.noop/1}
   ]
   @audio_outputs [RawAudio, AAC, Opus]
   @audio_cases for input <- @audio_inputs,
@@ -36,15 +37,22 @@ defmodule Membrane.Transcoder.IntegrationTest do
   @test_cases @video_cases ++ @audio_cases
 
   Enum.map(@test_cases, fn test_case ->
-    test "if transcoder support #{inspect(test_case.input_format)} input and #{inspect(test_case.output_format)} output" do
+    test "if transcoder supports #{inspect(test_case.input_format)} input and #{inspect(test_case.output_format)} output" do
       pid = Testing.Pipeline.start_link_supervised!()
+
+      override_input_stream_format =
+        if unquote(test_case.input_format) == MPEGAudio,
+          do: %Membrane.RemoteStream{content_format: MPEGAudio, type: :packetized}
 
       spec =
         child(%Membrane.File.Source{
           location: Path.join("./test/fixtures", unquote(test_case.input_file))
         })
         |> then(unquote(test_case.preprocess))
-        |> child(%Membrane.Transcoder{output_stream_format: unquote(test_case.output_format)})
+        |> child(%Membrane.Transcoder{
+          output_stream_format: unquote(test_case.output_format),
+          override_input_stream_format: override_input_stream_format
+        })
         |> child(:sink, Testing.Sink)
 
       Testing.Pipeline.execute_actions(pid, spec: spec)

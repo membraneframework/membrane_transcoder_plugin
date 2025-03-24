@@ -3,7 +3,7 @@ defmodule Membrane.Transcoder.Audio do
 
   import Membrane.ChildrenSpec
   require Membrane.Logger
-  alias Membrane.{AAC, ChildrenSpec, Opus, RawAudio, RemoteStream}
+  alias Membrane.{AAC, ChildrenSpec, Opus, RawAudio, RemoteStream, MPEGAudio}
 
   @opus_sample_rate 48_000
   @aac_sample_rates [
@@ -20,14 +20,17 @@ defmodule Membrane.Transcoder.Audio do
     11_025,
     8000
   ]
+  @mpeg_raw_audio_format %RawAudio{sample_rate: 44_100, sample_format: :s32le, channels: 2}
 
-  @type audio_stream_format :: AAC.t() | Opus.t() | RawAudio.t()
+  @type audio_stream_format :: AAC.t() | Opus.t() | Membrane.MPEGAudio.t() | RawAudio.t()
 
   defguard is_audio_format(format)
            when is_struct(format) and
-                  (format.__struct__ in [AAC, Opus, RawAudio] or
-                     (format.__struct__ == RemoteStream and format.content_format == Opus and
-                        format.type == :packetized))
+                  (format.__struct__ in [AAC, Opus, MPEGAudio, RawAudio] or
+                     (format.__struct__ == RemoteStream and
+                        format.content_format == Opus and
+                        format.type == :packetized) or
+                     (format.__struct__ == RemoteStream and format.content_format == MPEGAudio))
 
   @spec plug_audio_transcoding(
           ChildrenSpec.builder(),
@@ -90,32 +93,65 @@ defmodule Membrane.Transcoder.Audio do
     builder |> child(:aac_decoder, AAC.FDK.Decoder)
   end
 
+  defp maybe_plug_decoder(builder, %MPEGAudio{}) do
+    builder |> child(:mp3_decoder, Membrane.MP3.MAD.Decoder)
+  end
+
+  defp maybe_plug_decoder(builder, %RemoteStream{content_format: MPEGAudio}) do
+    builder |> child(:mp3_decoder, Membrane.MP3.MAD.Decoder)
+  end
+
   defp maybe_plug_decoder(builder, %RawAudio{}) do
     builder
   end
 
-  defp maybe_plug_resampler(builder, %{sample_rate: sample_rate} = input_format, %Opus{})
-       when sample_rate != @opus_sample_rate do
-    builder
-    |> child(:resampler, %Membrane.FFmpeg.SWResample.Converter{
-      output_stream_format: %RawAudio{
-        sample_format: :s16le,
-        sample_rate: @opus_sample_rate,
-        channels: input_format.channels
-      }
-    })
+  defp maybe_plug_resampler(builder, input_format, %Opus{}) do
+    if Map.get(input_format, :sample_rate) != @opus_sample_rate do
+      builder
+      |> child(:resampler, %Membrane.FFmpeg.SWResample.Converter{
+        output_stream_format: %RawAudio{
+          sample_format: :s16le,
+          sample_rate: @opus_sample_rate,
+          channels: Map.get(input_format, :channels, 1)
+        }
+      })
+    else
+      builder
+    end
   end
 
-  defp maybe_plug_resampler(builder, %{sample_rate: sample_rate} = input_format, %AAC{})
-       when sample_rate not in @aac_sample_rates do
-    builder
-    |> child(:resampler, %Membrane.FFmpeg.SWResample.Converter{
-      output_stream_format: %RawAudio{
-        sample_format: :s16le,
-        sample_rate: 44_100,
-        channels: input_format.channels
-      }
-    })
+  defp maybe_plug_resampler(builder, input_format, %AAC{}) do
+    if Map.get(input_format, :sample_rate) not in @aac_sample_rates do
+      builder
+      |> child(:resampler, %Membrane.FFmpeg.SWResample.Converter{
+        output_stream_format: %RawAudio{
+          sample_format: :s16le,
+          sample_rate: 44_100,
+          channels: Map.get(input_format, :channels, 1)
+        }
+      })
+    else
+      builder
+    end
+  end
+
+  defp maybe_plug_resampler(
+         builder,
+         input_format,
+         %MPEGAudio{}
+       ) do
+    if Map.get(input_format, :sample_rate) != @mpeg_raw_audio_format.sample_rate and
+         input_format.sample_format ==
+           @mpeg_raw_audio_format.sample_format and
+         input_format.channels ==
+           @mpeg_raw_audio_format.channels do
+      builder
+      |> child(:resampler, %Membrane.FFmpeg.SWResample.Converter{
+        output_stream_format: @mpeg_raw_audio_format
+      })
+    else
+      builder
+    end
   end
 
   defp maybe_plug_resampler(builder, _input_format, _output_format) do
@@ -128,6 +164,10 @@ defmodule Membrane.Transcoder.Audio do
 
   defp maybe_plug_encoder(builder, %AAC{}) do
     builder |> child(:aac_encoder, AAC.FDK.Encoder)
+  end
+
+  defp maybe_plug_encoder(builder, %MPEGAudio{}) do
+    builder |> child(:opus_encoder, Membrane.MP3.Lame.Encoder)
   end
 
   defp maybe_plug_encoder(builder, %RawAudio{}) do

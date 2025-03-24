@@ -63,4 +63,9 @@ defmodule Membrane.Transcoder.Support.Preprocessors do
       generate_best_effort_timestamps?: true
     })
   end
+
+  @spec noop(Membrane.ChildrenSpec.builder()) :: Membrane.ChildrenSpec.builder()
+  def noop(link_builder) do
+    link_builder
+  end
 end
