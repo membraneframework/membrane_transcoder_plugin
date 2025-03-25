@@ -3,7 +3,7 @@ defmodule Membrane.Transcoder.Audio do
 
   import Membrane.ChildrenSpec
   require Membrane.Logger
-  alias Membrane.{AAC, ChildrenSpec, Opus, RawAudio, RemoteStream, MPEGAudio}
+  alias Membrane.{AAC, ChildrenSpec, MPEGAudio, Opus, RawAudio, RemoteStream}
 
   @opus_sample_rate 48_000
   @aac_sample_rates [
@@ -106,7 +106,9 @@ defmodule Membrane.Transcoder.Audio do
   end
 
   defp maybe_plug_resampler(builder, input_format, %Opus{}) do
-    if Map.get(input_format, :sample_rate) != @opus_sample_rate do
+    if Map.get(input_format, :sample_rate) == @opus_sample_rate do
+      builder
+    else
       builder
       |> child(:resampler, %Membrane.FFmpeg.SWResample.Converter{
         output_stream_format: %RawAudio{
@@ -115,13 +117,13 @@ defmodule Membrane.Transcoder.Audio do
           channels: Map.get(input_format, :channels, 1)
         }
       })
-    else
-      builder
     end
   end
 
   defp maybe_plug_resampler(builder, input_format, %AAC{}) do
-    if Map.get(input_format, :sample_rate) not in @aac_sample_rates do
+    if Map.get(input_format, :sample_rate) in @aac_sample_rates do
+      builder
+    else
       builder
       |> child(:resampler, %Membrane.FFmpeg.SWResample.Converter{
         output_stream_format: %RawAudio{
@@ -130,8 +132,6 @@ defmodule Membrane.Transcoder.Audio do
           channels: Map.get(input_format, :channels, 1)
         }
       })
-    else
-      builder
     end
   end
 
@@ -140,16 +140,16 @@ defmodule Membrane.Transcoder.Audio do
          input_format,
          %MPEGAudio{}
        ) do
-    if Map.get(input_format, :sample_rate) != @mpeg_raw_audio_format.sample_rate or
-         Map.get(input_format, :sample_format) != @mpeg_raw_audio_format.sample_format or
-         Map.get(input_format, :channels) !=
+    if Map.get(input_format, :sample_rate) == @mpeg_raw_audio_format.sample_rate and
+         Map.get(input_format, :sample_format) == @mpeg_raw_audio_format.sample_format and
+         Map.get(input_format, :channels) ==
            @mpeg_raw_audio_format.channels do
+      builder
+    else
       builder
       |> child(:resampler, %Membrane.FFmpeg.SWResample.Converter{
         output_stream_format: @mpeg_raw_audio_format
       })
-    else
-      builder
     end
   end
 
