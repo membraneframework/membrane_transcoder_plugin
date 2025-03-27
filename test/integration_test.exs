@@ -51,7 +51,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
         |> then(unquote(test_case.preprocess))
         |> child(%Membrane.Transcoder{
           output_stream_format: unquote(test_case.output_format),
-          override_input_stream_format: override_input_stream_format
+          assumed_input_stream_format: override_input_stream_format
         })
         |> child(:sink, Testing.Sink)
 
