@@ -20,6 +20,9 @@ defmodule Membrane.Transcoder.Audio do
     11_025,
     8000
   ]
+
+  @aac_sample_format :s16le
+
   @mpeg_raw_audio_format %RawAudio{sample_rate: 44_100, sample_format: :s32le, channels: 2}
 
   @type audio_stream_format :: AAC.t() | Opus.t() | Membrane.MPEGAudio.t() | RawAudio.t()
@@ -121,7 +124,8 @@ defmodule Membrane.Transcoder.Audio do
   end
 
   defp maybe_plug_resampler(builder, input_format, %AAC{}) do
-    if Map.get(input_format, :sample_rate) in @aac_sample_rates do
+    if Map.get(input_format, :sample_rate) in @aac_sample_rates  and Map.get(input_format,
+      :sample_format) == :s16le do
       builder
     else
       builder
