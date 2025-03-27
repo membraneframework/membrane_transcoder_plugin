@@ -26,20 +26,28 @@ defmodule Membrane.Transcoder.Video do
 
   defp do_plug_video_transcoding(
          builder,
-         %h26x{},
-         %h26x{} = output_format,
+         %H264{},
+         %H264{} = output_format,
          false = _force_transcoding?
-       )
-       when h26x in [H264, H265] do
-    parser =
-      h26x
-      |> Module.concat(Parser)
-      |> struct!(
-        output_stream_structure: stream_structure_type(output_format),
-        output_alignment: output_format.alignment
-      )
+       ) do
+    builder
+    |> child(:h264_parser, %H264.Parser{
+      output_stream_structure: stream_structure_type(output_format),
+      output_alignment: output_format.alignment
+    })
+  end
 
-    builder |> child(:h264_parser, parser)
+  defp do_plug_video_transcoding(
+         builder,
+         %H265{},
+         %H265{} = output_format,
+         false = _force_transcoding?
+       ) do
+    builder
+    |> child(:h265_parser, %H265.Parser{
+      output_stream_structure: stream_structure_type(output_format),
+      output_alignment: output_format.alignment
+    })
   end
 
   defp do_plug_video_transcoding(
@@ -115,7 +123,7 @@ defmodule Membrane.Transcoder.Video do
     })
   end
 
-  defp maybe_plug_encoder_and_parser(builder, %vpx{}) when vpx in [VP8, VP9] do
+  defp maybe_plug_encoder_and_parser(builder, %VP8{}) do
     cpu_quota = :erlang.system_info(:cpu_quota)
 
     number_of_threads =
@@ -123,8 +131,18 @@ defmodule Membrane.Transcoder.Video do
         do: cpu_quota,
         else: :erlang.system_info(:logical_processors_available)
 
-    encoder = Module.concat(vpx, Encoder) |> struct!(g_threads: number_of_threads, cpu_used: 15)
-    builder |> child(:vp8_encoder, encoder)
+    builder |> child(:vp8_encoder, %VP8.Encoder{g_threads: number_of_threads, cpu_used: 15})
+  end
+
+  defp maybe_plug_encoder_and_parser(builder, %VP9{}) do
+    cpu_quota = :erlang.system_info(:cpu_quota)
+
+    number_of_threads =
+      if cpu_quota != :unknown,
+        do: cpu_quota,
+        else: :erlang.system_info(:logical_processors_available)
+
+    builder |> child(:vp8_encoder, %VP9.Encoder{g_threads: number_of_threads, cpu_used: 15})
   end
 
   defp maybe_plug_encoder_and_parser(builder, %RawVideo{}) do
