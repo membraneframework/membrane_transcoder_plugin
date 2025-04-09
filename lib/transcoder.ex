@@ -69,16 +69,27 @@ defmodule Membrane.Transcoder do
                 and is supposed to return the desired output stream format or its module.
                 """
               ],
-              force_transcoding?: [
-                spec: boolean() | (stream_format() -> boolean()),
-                default: false,
+              transcoding_policy: [
+                spec: :always | :if_needed | :never,
+                default: :if_needed,
                 description: """
-                If set to `true`, the input media stream will be decoded and encoded, even
-                if the input stream format and the output stream format are the same type.
+                Specifies, when transcoding should be appliead.
 
                 Can be either:
-                * a boolean,
-                * a function that receives the input stream format and returns a boolean.
+                * an atom: `:always`, `:if_needed` (default) or `:never`,
+                * a function that receives the input stream format and returns an atom.
+
+                If set to `:always`, the input media stream will be decoded and encoded, even
+                if the input stream format and the output stream format are the same type.
+
+                If set to `:if_needed`, the input media stream will be transcoded only if the input
+                stream format and the output stream format are different types.
+                This is the default behavior.
+
+                If set to `:never`, the input media stream won't be neither deocded nor transcoded.
+                Changing alignment, encapsulation or stream structure is still possible. This option
+                is helpful when you want to ensure that #{inspect(__MODULE__)} will not use too much
+                of resources, e.g. CPU or memory.
                 """
               ]
 
@@ -109,8 +120,8 @@ defmodule Membrane.Transcoder do
       |> resolve_output_stream_format()
 
     state =
-      with %{force_transcoding?: f} when is_function(f) <- state do
-        %{state | force_transcoding?: f.(format)}
+      with %{transcoding_policy: f} when is_function(f) <- state do
+        %{state | transcoding_policy: f.(format)}
       end
 
     spec =
@@ -118,7 +129,7 @@ defmodule Membrane.Transcoder do
       |> plug_transcoding(
         format,
         state.output_stream_format,
-        state.force_transcoding?
+        state.transcoding_policy
       )
       |> get_child(:output_funnel)
 
@@ -160,15 +171,15 @@ defmodule Membrane.Transcoder do
     end
   end
 
-  defp plug_transcoding(builder, input_format, output_format, force_transcoding?)
+  defp plug_transcoding(builder, input_format, output_format, transcoding_policy)
        when Audio.is_audio_format(input_format) do
     builder
-    |> Audio.plug_audio_transcoding(input_format, output_format, force_transcoding?)
+    |> Audio.plug_audio_transcoding(input_format, output_format, transcoding_policy)
   end
 
-  defp plug_transcoding(builder, input_format, output_format, force_transcoding?)
+  defp plug_transcoding(builder, input_format, output_format, transcoding_policy)
        when Video.is_video_format(input_format) do
     builder
-    |> Video.plug_video_transcoding(input_format, output_format, force_transcoding?)
+    |> Video.plug_video_transcoding(input_format, output_format, transcoding_policy)
   end
 end

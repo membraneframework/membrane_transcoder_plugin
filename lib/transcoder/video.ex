@@ -19,18 +19,18 @@ defmodule Membrane.Transcoder.Video do
           video_stream_format(),
           boolean()
         ) :: ChildrenSpec.builder()
-  def plug_video_transcoding(builder, input_format, output_format, force_transcoding?)
+  def plug_video_transcoding(builder, input_format, output_format, transcoding_policy)
       when is_video_format(input_format) and is_video_format(output_format) do
-    do_plug_video_transcoding(builder, input_format, output_format, force_transcoding?)
+    do_plug_video_transcoding(builder, input_format, output_format, transcoding_policy)
   end
 
   defp do_plug_video_transcoding(
          builder,
          %h26x{},
          %h26x{} = output_format,
-         false = _force_transcoding?
+         transcoding_policy
        )
-       when h26x in [H264, H265] do
+       when h26x in [H264, H265] and transcoding_policy in [:if_needed, :never] do
     parser =
       h26x
       |> Module.concat(Parser)
@@ -46,8 +46,9 @@ defmodule Membrane.Transcoder.Video do
          builder,
          %format_module{},
          %format_module{},
-         false = _force_transcoding?
-       ) do
+         transcoding_policy
+       )
+       when transcoding_policy in [:if_needed, :never] do
     Membrane.Logger.debug("""
     This bin will only forward buffers, as the input stream format is the same type as the output stream format.
     """)
@@ -55,7 +56,14 @@ defmodule Membrane.Transcoder.Video do
     builder
   end
 
-  defp do_plug_video_transcoding(builder, input_format, output_format, _force_transcoding?) do
+  defp do_plug_video_transcoding(_builder, input_format, output_format, :never) do
+    raise """
+    Cannot convert input format #{inspect(input_format)} to output format #{inspect(output_format)} \
+    with :transcoding_policy option set to :never.
+    """
+  end
+
+  defp do_plug_video_transcoding(builder, input_format, output_format, _transcoding_policy) do
     builder
     |> maybe_plug_parser_and_decoder(input_format)
     |> maybe_plug_encoder_and_parser(output_format)

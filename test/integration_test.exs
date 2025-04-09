@@ -67,14 +67,14 @@ defmodule Membrane.Transcoder.IntegrationTest do
       do: {[stream_format: {:output, state.format}], state}
   end
 
-  test "if encoder and decoder are spawned or not, depending on the value of `force_transcoding?` option" do
+  test "if encoder and decoder are spawned or not, depending on the value of `transcoding_policy` option" do
     for format <- [%AAC{channels: 1}, %H264{alignment: :au, stream_structure: :annexb}],
-        force_transcoding? <- [true, false] do
+        transcoding_policy <- [:always, :if_needed, :never] do
       spec =
         child(:source, %FormatSource{format: format})
         |> child(:transcoder, %Membrane.Transcoder{
           output_stream_format: format,
-          force_transcoding?: force_transcoding?
+          transcoding_policy: transcoding_policy
         })
         |> child(:sink, Testing.Sink)
 
@@ -89,7 +89,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
       |> Enum.each(fn child_name ->
         get_child_result = Testing.Pipeline.get_child_pid(pipeline, [:transcoder, child_name])
 
-        if force_transcoding? do
+        if transcoding_policy == :always do
           assert {:ok, child_pid} = get_child_result
           assert is_pid(child_pid)
         else
@@ -99,5 +99,28 @@ defmodule Membrane.Transcoder.IntegrationTest do
 
       Testing.Pipeline.terminate(pipeline)
     end
+  end
+
+  @tag :xd
+  test "if transcoder raises `transcoding_policy` is set to `:never` and formats don't match" do
+    spec =
+      child(:source, %FormatSource{format: %H264{alignment: :au, stream_structure: :annexb}})
+      |> child(:transcoder, %Membrane.Transcoder{
+        output_stream_format: VP8,
+        transcoding_policy: :never
+      })
+      |> child(:sink, Testing.Sink)
+
+    {:ok, pipeline, supervisor} = Testing.Pipeline.start_supervised()
+    # supervisor_ref = Process.monitor(supervisor)
+    pipeline_ref = Process.monitor(pipeline)
+
+    Testing.Pipeline.execute_actions(pipeline, spec: spec)
+
+    assert_receive {:DOWN, ^pipeline_ref, :process, _pid,
+                    {:membrane_child_crash, :transcoder,
+                     {%RuntimeError{}, _transcoder_stacktrace}}}
+
+    # assert_receive {:DOWN, ^supervisor_ref, :process, _pid, _reason}
   end
 end
