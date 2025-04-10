@@ -77,7 +77,7 @@ defmodule Membrane.Transcoder do
                   | (stream_format() -> :always | :if_needed | :never),
                 default: :if_needed,
                 description: """
-                Specifies, when transcoding should be appliead.
+                Specifies, when transcoding should be applied.
 
                 Can be either:
                 * an atom: `:always`, `:if_needed` (default) or `:never`,
