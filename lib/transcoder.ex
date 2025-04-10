@@ -86,7 +86,7 @@ defmodule Membrane.Transcoder do
                 stream format and the output stream format are different types.
                 This is the default behavior.
 
-                If set to `:never`, the input media stream won't be neither deocded nor transcoded.
+                If set to `:never`, the input media stream won't be neither decoded nor transcoded.
                 Changing alignment, encapsulation or stream structure is still possible. This option
                 is helpful when you want to ensure that #{inspect(__MODULE__)} will not use too much
                 of resources, e.g. CPU or memory.
