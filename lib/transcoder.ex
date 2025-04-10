@@ -138,8 +138,8 @@ defmodule Membrane.Transcoder do
 
   defp maybe_override_input_stream_format(_builder, stream_format) do
     raise """
-    The only input stream format that can be assumed is
-    `%Membrane.RemoteStream{content_format: Membrane.MPEGAudio}`, while you wanted to assume:
+    The only input stream format that can be assumed is \
+    `%Membrane.RemoteStream{content_format: Membrane.MPEGAudio}`, while you wanted to assume: \
     #{inspect(stream_format)}
     """
   end
