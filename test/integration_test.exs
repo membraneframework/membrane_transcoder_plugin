@@ -70,10 +70,16 @@ defmodule Membrane.Transcoder.IntegrationTest do
   test "if encoder and decoder are spawned or not, depending on the value of `transcoding_policy` option" do
     for format <- [%AAC{channels: 1}, %H264{alignment: :au, stream_structure: :annexb}],
         transcoding_policy <- [:always, :if_needed, :never] do
+      output_format =
+        case format do
+          %H264{} -> %H264{format | stream_structure: :avc1}
+          %AAC{} -> format
+        end
+
       spec =
         child(:source, %FormatSource{format: format})
         |> child(:transcoder, %Membrane.Transcoder{
-          output_stream_format: format,
+          output_stream_format: output_format,
           transcoding_policy: transcoding_policy
         })
         |> child(:sink, Testing.Sink)
@@ -101,8 +107,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
     end
   end
 
-  @tag :xd
-  test "if transcoder raises `transcoding_policy` is set to `:never` and formats don't match" do
+  test "if transcoder raises when `transcoding_policy` is set to `:never` and formats don't match" do
     spec =
       child(:source, %FormatSource{format: %H264{alignment: :au, stream_structure: :annexb}})
       |> child(:transcoder, %Membrane.Transcoder{
@@ -111,16 +116,15 @@ defmodule Membrane.Transcoder.IntegrationTest do
       })
       |> child(:sink, Testing.Sink)
 
-    {:ok, pipeline, supervisor} = Testing.Pipeline.start_supervised()
-    # supervisor_ref = Process.monitor(supervisor)
+    {:ok, supervisor, pipeline} = Testing.Pipeline.start(spec: [])
+    supervisor_ref = Process.monitor(supervisor)
     pipeline_ref = Process.monitor(pipeline)
 
     Testing.Pipeline.execute_actions(pipeline, spec: spec)
 
     assert_receive {:DOWN, ^pipeline_ref, :process, _pid,
-                    {:membrane_child_crash, :transcoder,
-                     {%RuntimeError{}, _transcoder_stacktrace}}}
+                    {:membrane_child_crash, :transcoder, {%RuntimeError{}, _stacktrace}}}
 
-    # assert_receive {:DOWN, ^supervisor_ref, :process, _pid, _reason}
+    assert_receive {:DOWN, ^supervisor_ref, :process, _pid, _reason}
   end
 end
