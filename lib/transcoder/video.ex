@@ -3,14 +3,14 @@ defmodule Membrane.Transcoder.Video do
 
   import Membrane.ChildrenSpec
   require Membrane.Logger
-  alias Membrane.{ChildrenSpec, H264, H265, RawVideo, RemoteStream, VP8}
+  alias Membrane.{ChildrenSpec, H264, H265, RawVideo, RemoteStream, VP8, VP9}
 
-  @type video_stream_format :: VP8.t() | H264.t() | H265.t() | RawVideo.t()
+  @type video_stream_format :: VP8.t() | VP9.t() | H264.t() | H265.t() | RawVideo.t()
 
   defguard is_video_format(format)
            when is_struct(format) and
-                  (format.__struct__ in [VP8, H264, H265, RawVideo] or
-                     (format.__struct__ == RemoteStream and format.content_format == VP8 and
+                  (format.__struct__ in [VP8, VP9, H264, H265, RawVideo] or
+                     (format.__struct__ == RemoteStream and format.content_format in [VP8, VP9] and
                         format.type == :packetized))
 
   @spec plug_video_transcoding(
@@ -24,22 +24,22 @@ defmodule Membrane.Transcoder.Video do
     do_plug_video_transcoding(builder, input_format, output_format, transcoding_policy)
   end
 
-  defp do_plug_video_transcoding(
-         builder,
-         %h26x{},
-         %h26x{} = output_format,
-         transcoding_policy
-       )
-       when h26x in [H264, H265] and transcoding_policy in [:if_needed, :never] do
-    parser =
-      h26x
-      |> Module.concat(Parser)
-      |> struct!(
-        output_stream_structure: stream_structure_type(output_format),
-        output_alignment: output_format.alignment
-      )
+  defp do_plug_video_transcoding(builder, %H264{}, %H264{} = output_format, transcoding_policy)
+       when transcoding_policy in [:if_needed, :never] do
+    builder
+    |> child(:h264_parser, %H264.Parser{
+      output_stream_structure: stream_structure_type(output_format),
+      output_alignment: output_format.alignment
+    })
+  end
 
-    builder |> child(:h264_parser, parser)
+  defp do_plug_video_transcoding(builder, %H265{}, %H265{} = output_format, transcoding_policy)
+       when transcoding_policy in [:if_needed, :never] do
+    builder
+    |> child(:h265_parser, %H265.Parser{
+      output_stream_structure: stream_structure_type(output_format),
+      output_alignment: output_format.alignment
+    })
   end
 
   defp do_plug_video_transcoding(
@@ -87,15 +87,18 @@ defmodule Membrane.Transcoder.Video do
     |> child(:h265_decoder, %H265.FFmpeg.Decoder{})
   end
 
-  defp maybe_plug_parser_and_decoder(builder, %VP8{}) do
-    builder |> child(:vp8_decoder, %VP8.Decoder{})
+  defp maybe_plug_parser_and_decoder(builder, %vpx{}) when vpx in [VP8, VP9] do
+    decoder_module = Module.concat(vpx, Decoder)
+    builder |> child(:vp8_decoder, decoder_module)
   end
 
   defp maybe_plug_parser_and_decoder(builder, %RemoteStream{
-         content_format: VP8,
+         content_format: vpx,
          type: :packetized
-       }) do
-    builder |> child(:vp8_decoder, %VP8.Decoder{})
+       })
+       when vpx in [VP8, VP9] do
+    decoder_module = Module.concat(vpx, Decoder)
+    builder |> child(:vp8_decoder, decoder_module)
   end
 
   defp maybe_plug_parser_and_decoder(builder, %RawVideo{}) do
@@ -129,6 +132,17 @@ defmodule Membrane.Transcoder.Video do
         else: :erlang.system_info(:logical_processors_available)
 
     builder |> child(:vp8_encoder, %VP8.Encoder{g_threads: number_of_threads, cpu_used: 15})
+  end
+
+  defp maybe_plug_encoder_and_parser(builder, %VP9{}) do
+    cpu_quota = :erlang.system_info(:cpu_quota)
+
+    number_of_threads =
+      if cpu_quota != :unknown,
+        do: cpu_quota,
+        else: :erlang.system_info(:logical_processors_available)
+
+    builder |> child(:vp8_encoder, %VP9.Encoder{g_threads: number_of_threads, cpu_used: 15})
   end
 
   defp maybe_plug_encoder_and_parser(builder, %RawVideo{}) do

@@ -28,4 +28,4 @@ defmodule Example do
 end
 
 File.mkdir("tmp")
-Example.convert(Path.join("./test/fixtures", "video.ivf"), Path.join("./tmp", "video.h264"))
+Example.convert(Path.join("./test/fixtures", "video_vp8.ivf"), Path.join("./tmp", "video.h264"))
