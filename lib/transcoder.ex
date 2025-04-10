@@ -70,7 +70,11 @@ defmodule Membrane.Transcoder do
                 """
               ],
               transcoding_policy: [
-                spec: :always | :if_needed | :never,
+                spec:
+                  :always
+                  | :if_needed
+                  | :never
+                  | (stream_format() -> :always | :if_needed | :never),
                 default: :if_needed,
                 description: """
                 Specifies, when transcoding should be appliead.
