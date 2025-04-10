@@ -37,8 +37,8 @@ defmodule Membrane.Transcoder.Support.Preprocessors do
     })
   end
 
-  @spec parse_vp8(Membrane.ChildrenSpec.builder()) :: Membrane.ChildrenSpec.builder()
-  def parse_vp8(link_builder) do
+  @spec parse_vpx(Membrane.ChildrenSpec.builder()) :: Membrane.ChildrenSpec.builder()
+  def parse_vpx(link_builder) do
     child(link_builder, Membrane.IVF.Deserializer)
   end
 
@@ -62,5 +62,10 @@ defmodule Membrane.Transcoder.Support.Preprocessors do
       delimitation: :undelimit,
       generate_best_effort_timestamps?: true
     })
+  end
+
+  @spec noop(Membrane.ChildrenSpec.builder()) :: Membrane.ChildrenSpec.builder()
+  def noop(link_builder) do
+    link_builder
   end
 end

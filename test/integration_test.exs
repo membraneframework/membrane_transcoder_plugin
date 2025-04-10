@@ -3,7 +3,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
   import Membrane.Testing.Assertions
   import Membrane.ChildrenSpec
 
-  alias Membrane.{AAC, H264, H265, Opus, RawAudio, RawVideo, VP8}
+  alias Membrane.{AAC, H264, H265, MPEGAudio, Opus, RawAudio, RawVideo, VP8, VP9}
   alias Membrane.Testing
   alias Membrane.Transcoder.Support.Preprocessors
 
@@ -11,9 +11,10 @@ defmodule Membrane.Transcoder.IntegrationTest do
     %{input_format: H264, input_file: "video.h264", preprocess: &Preprocessors.parse_h264/1},
     %{input_format: RawVideo, input_file: "video.h264", preprocess: &Preprocessors.decode_h264/1},
     %{input_format: H265, input_file: "video.h265", preprocess: &Preprocessors.parse_h265/1},
-    %{input_format: VP8, input_file: "video.ivf", preprocess: &Preprocessors.parse_vp8/1}
+    %{input_format: VP8, input_file: "video_vp8.ivf", preprocess: &Preprocessors.parse_vpx/1},
+    %{input_format: VP9, input_file: "video_vp9.ivf", preprocess: &Preprocessors.parse_vpx/1}
   ]
-  @video_outputs [RawVideo, H264, H265, VP8]
+  @video_outputs [RawVideo, H264, H265, VP8, VP9]
   @video_cases for input <- @video_inputs,
                    output <- @video_outputs,
                    do: Map.put(input, :output_format, output)
@@ -25,9 +26,10 @@ defmodule Membrane.Transcoder.IntegrationTest do
       preprocess: &Preprocessors.parse_raw_audio/1
     },
     %{input_format: AAC, input_file: "audio.aac", preprocess: &Preprocessors.parse_aac/1},
-    %{input_format: Opus, input_file: "audio.opus", preprocess: &Preprocessors.parse_opus/1}
+    %{input_format: Opus, input_file: "audio.opus", preprocess: &Preprocessors.parse_opus/1},
+    %{input_format: MPEGAudio, input_file: "audio.mp3", preprocess: &Preprocessors.noop/1}
   ]
-  @audio_outputs [RawAudio, AAC, Opus]
+  @audio_outputs [RawAudio, AAC, Opus, MPEGAudio]
   @audio_cases for input <- @audio_inputs,
                    output <- @audio_outputs,
                    do: Map.put(input, :output_format, output)
@@ -35,15 +37,22 @@ defmodule Membrane.Transcoder.IntegrationTest do
   @test_cases @video_cases ++ @audio_cases
 
   Enum.map(@test_cases, fn test_case ->
-    test "if transcoder support #{inspect(test_case.input_format)} input and #{inspect(test_case.output_format)} output" do
+    test "if transcoder supports #{inspect(test_case.input_format)} input and #{inspect(test_case.output_format)} output" do
       pid = Testing.Pipeline.start_link_supervised!()
+
+      override_input_stream_format =
+        if unquote(test_case.input_format) == MPEGAudio,
+          do: %Membrane.RemoteStream{content_format: MPEGAudio, type: :packetized}
 
       spec =
         child(%Membrane.File.Source{
           location: Path.join("./test/fixtures", unquote(test_case.input_file))
         })
         |> then(unquote(test_case.preprocess))
-        |> child(%Membrane.Transcoder{output_stream_format: unquote(test_case.output_format)})
+        |> child(%Membrane.Transcoder{
+          output_stream_format: unquote(test_case.output_format),
+          assumed_input_stream_format: override_input_stream_format
+        })
         |> child(:sink, Testing.Sink)
 
       Testing.Pipeline.execute_actions(pid, spec: spec)

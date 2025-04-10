@@ -1,7 +1,7 @@
 defmodule Membrane.Transcoder.Plugin.Mixfile do
   use Mix.Project
 
-  @version "0.2.1"
+  @version "0.2.2"
   @github_url "https://github.com/membraneframework/membrane_transcoder_plugin"
 
   def project do
@@ -53,6 +53,9 @@ defmodule Membrane.Transcoder.Plugin.Mixfile do
       {:membrane_opus_format, "~> 0.3.0"},
       {:membrane_aac_format, "~> 0.8.0"},
       {:membrane_funnel_plugin, "~> 0.9.1"},
+      {:membrane_mpegaudio_format, "~> 0.3.0"},
+      {:membrane_mp3_mad_plugin, "~> 0.18.4"},
+      {:membrane_mp3_lame_plugin, "~> 0.18.3"},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
       {:dialyxir, ">= 0.0.0", only: :dev, runtime: false},
       {:credo, ">= 0.0.0", only: :dev, runtime: false},

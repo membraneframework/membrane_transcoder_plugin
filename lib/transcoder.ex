@@ -8,13 +8,18 @@ defmodule Membrane.Transcoder do
   * `Membrane.H264`
   * `Membrane.H265`
   * `Membrane.VP8`
+  * `Membrane.VP9`
   * `Membrane.RawVideo`
+  * `Membrane.RemoteStream{content_type: Membrane.VP8}` (only as an input stream)
+  * `Membrane.RemoteStream{content_type: Membrane.VP9}` (only as an input stream)
 
   The following audio stream formats are supported:
   * `Membrane.AAC`
   * `Membrane.Opus`
+  * `Membrane.MPEGAudio`
   * `Membrane.RawAudio`
   * `Membrane.RemoteStream{content_type: Membrane.Opus}` (only as an input stream)
+  * `Membrane.RemoteStream{content_type: Membrane.MPEGAudio}` (only as an input stream)
   """
   use Membrane.Bin
 
@@ -23,7 +28,7 @@ defmodule Membrane.Transcoder do
   require Membrane.Logger
 
   alias __MODULE__.{Audio, Video}
-  alias Membrane.{AAC, Funnel, H264, H265, Opus, RawAudio, RawVideo, RemoteStream, VP8}
+  alias Membrane.{AAC, Funnel, H264, H265, Opus, RawAudio, RawVideo, RemoteStream, VP8, VP9}
 
   @typedoc """
   Describes stream formats acceptable on the bin's input and output.
@@ -32,16 +37,19 @@ defmodule Membrane.Transcoder do
           H264.t()
           | H265.t()
           | VP8.t()
+          | VP9.t()
           | RawVideo.t()
           | AAC.t()
           | Opus.t()
+          | Membrane.MPEGAudio.t()
           | RemoteStream.t()
           | RawAudio.t()
 
   @typedoc """
   Describes stream format modules that can be used to define inputs and outputs of the bin.
   """
-  @type stream_format_module :: H264 | H265 | VP8 | RawVideo | AAC | Opus | RawAudio
+  @type stream_format_module ::
+          H264 | H265 | VP8 | VP9 | RawVideo | AAC | Opus | Membrane.MPEGAudio | RawAudio
 
   @typedoc """
   Describes a function which can be used to provide output format based on the input format.
@@ -49,7 +57,10 @@ defmodule Membrane.Transcoder do
   @type stream_format_resolver :: (stream_format() -> stream_format() | stream_format_module())
 
   def_input_pad :input,
-    accepted_format: format when Audio.is_audio_format(format) or Video.is_video_format(format)
+    accepted_format:
+      format
+      when Audio.is_audio_format(format) or Video.is_video_format(format) or
+             format.__struct__ == RemoteStream
 
   def_output_pad :output,
     accepted_format: format when Audio.is_audio_format(format) or Video.is_video_format(format)
@@ -80,12 +91,22 @@ defmodule Membrane.Transcoder do
                 * a boolean,
                 * a function that receives the input stream format and returns a boolean.
                 """
+              ],
+              assumed_input_stream_format: [
+                spec: %Membrane.RemoteStream{content_format: Membrane.MPEGAudio} | nil,
+                default: nil,
+                description: """
+                Allows to override stream format of the input stream with
+                `%Membrane.RemoteStream{content_format: Membrane.MPEGAudio}`
+                If nil, the input stream format won't be overriden.
+                """
               ]
 
   @impl true
   def handle_init(_ctx, opts) do
     spec = [
       bin_input()
+      |> maybe_override_input_stream_format(opts.assumed_input_stream_format)
       |> child(:connector, %Membrane.Connector{notify_on_stream_format?: true}),
       child(:output_funnel, Funnel)
       |> bin_output()
@@ -99,6 +120,28 @@ defmodule Membrane.Transcoder do
       })
 
     {[spec: spec], state}
+  end
+
+  defp maybe_override_input_stream_format(
+         builder,
+         %Membrane.RemoteStream{content_format: Membrane.MPEGAudio} = stream_format
+       ) do
+    builder
+    |> child(:stream_format_changer, %Membrane.Transcoder.StreamFormatChanger{
+      stream_format: stream_format
+    })
+  end
+
+  defp maybe_override_input_stream_format(builder, nil) do
+    builder
+  end
+
+  defp maybe_override_input_stream_format(_builder, stream_format) do
+    raise """
+    The only input stream format that can be assumed is \
+    `%Membrane.RemoteStream{content_format: Membrane.MPEGAudio}`, while you wanted to assume: \
+    #{inspect(stream_format)}
+    """
   end
 
   @impl true
