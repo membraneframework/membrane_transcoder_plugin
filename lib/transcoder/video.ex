@@ -19,17 +19,13 @@ defmodule Membrane.Transcoder.Video do
           video_stream_format(),
           boolean()
         ) :: ChildrenSpec.builder()
-  def plug_video_transcoding(builder, input_format, output_format, force_transcoding?)
+  def plug_video_transcoding(builder, input_format, output_format, transcoding_policy)
       when is_video_format(input_format) and is_video_format(output_format) do
-    do_plug_video_transcoding(builder, input_format, output_format, force_transcoding?)
+    do_plug_video_transcoding(builder, input_format, output_format, transcoding_policy)
   end
 
-  defp do_plug_video_transcoding(
-         builder,
-         %H264{},
-         %H264{} = output_format,
-         false = _force_transcoding?
-       ) do
+  defp do_plug_video_transcoding(builder, %H264{}, %H264{} = output_format, transcoding_policy)
+       when transcoding_policy in [:if_needed, :never] do
     builder
     |> child(:h264_parser, %H264.Parser{
       output_stream_structure: stream_structure_type(output_format),
@@ -37,12 +33,8 @@ defmodule Membrane.Transcoder.Video do
     })
   end
 
-  defp do_plug_video_transcoding(
-         builder,
-         %H265{},
-         %H265{} = output_format,
-         false = _force_transcoding?
-       ) do
+  defp do_plug_video_transcoding(builder, %H265{}, %H265{} = output_format, transcoding_policy)
+       when transcoding_policy in [:if_needed, :never] do
     builder
     |> child(:h265_parser, %H265.Parser{
       output_stream_structure: stream_structure_type(output_format),
@@ -54,8 +46,9 @@ defmodule Membrane.Transcoder.Video do
          builder,
          %format_module{},
          %format_module{},
-         false = _force_transcoding?
-       ) do
+         transcoding_policy
+       )
+       when transcoding_policy in [:if_needed, :never] do
     Membrane.Logger.debug("""
     This bin will only forward buffers, as the input stream format is the same type as the output stream format.
     """)
@@ -63,7 +56,14 @@ defmodule Membrane.Transcoder.Video do
     builder
   end
 
-  defp do_plug_video_transcoding(builder, input_format, output_format, _force_transcoding?) do
+  defp do_plug_video_transcoding(_builder, input_format, output_format, :never) do
+    raise """
+    Cannot convert input format #{inspect(input_format)} to output format #{inspect(output_format)} \
+    with :transcoding_policy option set to :never.
+    """
+  end
+
+  defp do_plug_video_transcoding(builder, input_format, output_format, _transcoding_policy) do
     builder
     |> maybe_plug_parser_and_decoder(input_format)
     |> maybe_plug_encoder_and_parser(output_format)
