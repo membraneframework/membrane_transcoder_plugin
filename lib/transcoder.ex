@@ -81,7 +81,8 @@ defmodule Membrane.Transcoder do
 
                 Can be either:
                 * an atom: `:always`, `:if_needed` (default) or `:never`,
-                * a function that receives the input stream format and returns an atom.
+                * a function that receives the input stream format and returns either `:always`,
+                  `:if_needed` or `:never`.
 
                 If set to `:always`, the input media stream will be decoded and encoded, even
                 if the input stream format and the output stream format are the same type.
@@ -90,10 +91,13 @@ defmodule Membrane.Transcoder do
                 stream format and the output stream format are different types.
                 This is the default behavior.
 
-                If set to `:never`, the input media stream won't be neither decoded nor transcoded.
+                If set to `:never`, the input media stream won't be neither decoded nor encoded.
                 Changing alignment, encapsulation or stream structure is still possible. This option
                 is helpful when you want to ensure that #{inspect(__MODULE__)} will not use too much
                 of resources, e.g. CPU or memory.
+
+                If the transition from the input stream format to the output stream format is not
+                possible without decoding or encoding the stream, an error will be raised.
                 """
               ]
 
