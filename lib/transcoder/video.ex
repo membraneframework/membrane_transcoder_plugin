@@ -8,10 +8,13 @@ defmodule Membrane.Transcoder.Video do
   @type video_stream_format :: VP8.t() | VP9.t() | H264.t() | H265.t() | RawVideo.t()
 
   defguard is_video_format(format)
-           when is_struct(format) and
-                  (format.__struct__ in [VP8, VP9, H264, H265, RawVideo] or
-                     (format.__struct__ == RemoteStream and format.content_format in [VP8, VP9] and
-                        format.type == :packetized))
+           when (is_struct(format) and
+                   (format.__struct__ in [VP8, VP9, H264, H265, RawVideo] or
+                      (format.__struct__ == RemoteStream and
+                         format.content_format in [VP8, VP9] and
+                         format.type == :packetized))) or
+                  (format.__struct__ == RemoteStream and
+                     format.content_format in [H264, H265])
 
   @spec plug_video_transcoding(
           ChildrenSpec.builder(),
@@ -22,6 +25,21 @@ defmodule Membrane.Transcoder.Video do
   def plug_video_transcoding(builder, input_format, output_format, transcoding_policy)
       when is_video_format(input_format) and is_video_format(output_format) do
     do_plug_video_transcoding(builder, input_format, output_format, transcoding_policy)
+  end
+
+  defp do_plug_video_transcoding(
+         builder,
+         %RemoteStream{content_format: h26x},
+         output_format,
+         transcoding_policy
+       )
+       when h26x in [H264, H265] do
+    do_plug_video_transcoding(
+      builder,
+      struct!(h26x),
+      output_format,
+      transcoding_policy
+    )
   end
 
   defp do_plug_video_transcoding(builder, %H264{}, %H264{} = output_format, transcoding_policy)
