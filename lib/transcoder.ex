@@ -10,16 +10,16 @@ defmodule Membrane.Transcoder do
   * `Membrane.VP8`
   * `Membrane.VP9`
   * `Membrane.RawVideo`
-  * `Membrane.RemoteStream{content_type: Membrane.VP8}` (only as an input stream)
-  * `Membrane.RemoteStream{content_type: Membrane.VP9}` (only as an input stream)
+  * `Membrane.RemoteStream{content_format: Membrane.VP8}` (only as an input stream)
+  * `Membrane.RemoteStream{content_format: Membrane.VP9}` (only as an input stream)
 
   The following audio stream formats are supported:
   * `Membrane.AAC`
   * `Membrane.Opus`
   * `Membrane.MPEGAudio`
   * `Membrane.RawAudio`
-  * `Membrane.RemoteStream{content_type: Membrane.Opus}` (only as an input stream)
-  * `Membrane.RemoteStream{content_type: Membrane.MPEGAudio}` (only as an input stream)
+  * `Membrane.RemoteStream{content_format: Membrane.Opus}` (only as an input stream)
+  * `Membrane.RemoteStream{content_format: Membrane.MPEGAudio}` (only as an input stream)
   """
   use Membrane.Bin
 
@@ -112,12 +112,15 @@ defmodule Membrane.Transcoder do
                 """
               ],
               assumed_input_stream_format: [
-                spec: %Membrane.RemoteStream{content_format: Membrane.MPEGAudio} | nil,
+                spec: struct() | nil,
                 default: nil,
                 description: """
-                Allows to override stream format of the input stream with
-                `%Membrane.RemoteStream{content_format: Membrane.MPEGAudio}`
-                If nil, the input stream format won't be overriden.
+                Allows to override stream format of the input stream.
+
+                Overriding will fail, the stream format sent on the #{inspect(__MODULE__)}'s input
+                pad is not `Membrane.RemoteStream`
+
+                If nil or not set, the input stream format won't be overriden.
                 """
               ]
 
@@ -125,7 +128,7 @@ defmodule Membrane.Transcoder do
   def handle_init(_ctx, opts) do
     spec = [
       bin_input()
-      |> maybe_override_input_stream_format(opts.assumed_input_stream_format)
+      |> maybe_plug_stream_format_changer(opts.assumed_input_stream_format)
       |> child(:connector, %Membrane.Connector{notify_on_stream_format?: true}),
       child(:output_funnel, Funnel)
       |> bin_output()
@@ -141,26 +144,13 @@ defmodule Membrane.Transcoder do
     {[spec: spec], state}
   end
 
-  defp maybe_override_input_stream_format(
-         builder,
-         %Membrane.RemoteStream{content_format: Membrane.MPEGAudio} = stream_format
-       ) do
+  defp maybe_plug_stream_format_changer(builder, nil), do: builder
+
+  defp maybe_plug_stream_format_changer(builder, enforced_stream_format) do
     builder
-    |> child(:stream_format_changer, %Membrane.Transcoder.StreamFormatChanger{
-      stream_format: stream_format
+    |> child(:stream_format_changer, %__MODULE__.StreamFormatChanger{
+      stream_format: enforced_stream_format
     })
-  end
-
-  defp maybe_override_input_stream_format(builder, nil) do
-    builder
-  end
-
-  defp maybe_override_input_stream_format(_builder, stream_format) do
-    raise """
-    The only input stream format that can be assumed is \
-    `%Membrane.RemoteStream{content_format: Membrane.MPEGAudio}`, while you wanted to assume: \
-    #{inspect(stream_format)}
-    """
   end
 
   @impl true
