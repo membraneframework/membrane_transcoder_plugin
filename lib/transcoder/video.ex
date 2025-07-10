@@ -7,14 +7,26 @@ defmodule Membrane.Transcoder.Video do
 
   @type video_stream_format :: VP8.t() | VP9.t() | H264.t() | H265.t() | RawVideo.t()
 
-  defguard is_video_format(format)
-           when (is_struct(format) and
-                   (format.__struct__ in [VP8, VP9, H264, H265, RawVideo] or
+  defguardp is_raw_video_format(format)
+            when is_struct(format) and format.__struct__ == RawVideo
+
+  defguardp is_h26x_format(format)
+            when is_struct(format) and
+                   (format.__struct__ in [H264, H265] or
+                      (format.__struct__ == RemoteStream and
+                         format.content_format in [H264, H265]))
+
+  defguardp is_vpx_format(format)
+            when is_struct(format) and
+                   (format.__struct__ in [VP8, VP9] or
                       (format.__struct__ == RemoteStream and
                          format.content_format in [VP8, VP9] and
-                         format.type == :packetized))) or
-                  (format.__struct__ == RemoteStream and
-                     format.content_format in [H264, H265])
+                         format.type == :packetized))
+
+  defguard is_video_format(format)
+           when is_h26x_format(format) or
+                  is_vpx_format(format) or
+                  is_raw_video_format(format)
 
   @spec plug_video_transcoding(
           ChildrenSpec.builder(),
