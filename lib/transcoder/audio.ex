@@ -22,13 +22,30 @@ defmodule Membrane.Transcoder.Audio do
 
   @type audio_stream_format :: AAC.t() | Opus.t() | Membrane.MPEGAudio.t() | RawAudio.t()
 
+  defguardp is_raw_audio_format(format)
+            when is_struct(format) and format.__struct__ == RawAudio
+
+  defguardp is_aac_format(format)
+            when is_struct(format) and format.__struct__ == AAC
+
+  defguardp is_opus_format(format)
+            when is_struct(format) and
+                   (format.__struct__ == Opus or
+                      (format.__struct__ == RemoteStream and
+                         format.content_format == Opus and
+                         format.type == :packetized))
+
+  defguardp is_mpeg_audio_format(format)
+            when is_struct(format) and
+                   (format.__struct__ == MPEGAudio or
+                      (format.__struct__ == RemoteStream and
+                         format.content_format == MPEGAudio))
+
   defguard is_audio_format(format)
-           when is_struct(format) and
-                  (format.__struct__ in [AAC, Opus, MPEGAudio, RawAudio] or
-                     (format.__struct__ == RemoteStream and
-                        format.content_format == Opus and
-                        format.type == :packetized) or
-                     (format.__struct__ == RemoteStream and format.content_format == MPEGAudio))
+           when is_raw_audio_format(format) or
+                  is_aac_format(format) or
+                  is_opus_format(format) or
+                  is_mpeg_audio_format(format)
 
   defguard is_opus_compliant(format)
            when is_map_key(format, :content_type) and format.content_type == :s16le and

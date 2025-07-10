@@ -7,11 +7,26 @@ defmodule Membrane.Transcoder.Video do
 
   @type video_stream_format :: VP8.t() | VP9.t() | H264.t() | H265.t() | RawVideo.t()
 
+  defguardp is_raw_video_format(format)
+            when is_struct(format) and format.__struct__ == RawVideo
+
+  defguardp is_h26x_format(format)
+            when is_struct(format) and
+                   (format.__struct__ in [H264, H265] or
+                      (format.__struct__ == RemoteStream and
+                         format.content_format in [H264, H265]))
+
+  defguardp is_vpx_format(format)
+            when is_struct(format) and
+                   (format.__struct__ in [VP8, VP9] or
+                      (format.__struct__ == RemoteStream and
+                         format.content_format in [VP8, VP9] and
+                         format.type == :packetized))
+
   defguard is_video_format(format)
-           when is_struct(format) and
-                  (format.__struct__ in [VP8, VP9, H264, H265, RawVideo] or
-                     (format.__struct__ == RemoteStream and format.content_format in [VP8, VP9] and
-                        format.type == :packetized))
+           when is_h26x_format(format) or
+                  is_vpx_format(format) or
+                  is_raw_video_format(format)
 
   @spec plug_video_transcoding(
           ChildrenSpec.builder(),
@@ -22,6 +37,21 @@ defmodule Membrane.Transcoder.Video do
   def plug_video_transcoding(builder, input_format, output_format, transcoding_policy)
       when is_video_format(input_format) and is_video_format(output_format) do
     do_plug_video_transcoding(builder, input_format, output_format, transcoding_policy)
+  end
+
+  defp do_plug_video_transcoding(
+         builder,
+         %RemoteStream{content_format: h26x},
+         output_format,
+         transcoding_policy
+       )
+       when h26x in [H264, H265] do
+    do_plug_video_transcoding(
+      builder,
+      struct!(h26x),
+      output_format,
+      transcoding_policy
+    )
   end
 
   defp do_plug_video_transcoding(builder, %H264{}, %H264{} = output_format, transcoding_policy)
