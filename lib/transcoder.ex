@@ -20,6 +20,12 @@ defmodule Membrane.Transcoder do
   * `Membrane.RawAudio`
   * `Membrane.RemoteStream{content_format: Membrane.Opus}` (only as an input stream)
   * `Membrane.RemoteStream{content_format: Membrane.MPEGAudio}` (only as an input stream)
+
+  While `#{inspect(__MODULE__)}` can transcode between different stream formats, it can also be used
+  to change some parameters of the stream format.
+  Now, the only supported stream parameters are:
+  * `:pixel_format` in `Membrane.RawVideo`
+  * `:alignment` and `:stream_structure` in `Membrane.H264` and `Membrane.H265`
   """
   use Membrane.Bin
 
@@ -50,6 +56,16 @@ defmodule Membrane.Transcoder do
   """
   @type stream_format_module ::
           H264 | H265 | VP8 | VP9 | RawVideo | AAC | Opus | Membrane.MPEGAudio | RawAudio
+
+  @typedoc """
+  Describes a tuple consisting of a stream format module and its options.
+
+  An alternative to `t:#{inspect(__MODULE__)}.stream_format/0`.
+
+  Allows you to specify some fields of the output stream format, without the need to
+  set all keys required by the struct.
+  """
+  @type stream_format_tuple :: {stream_format_module(), keyword()}
 
   @typedoc """
   Describes a function which can be used to provide output format based on the input format.
@@ -205,6 +221,9 @@ defmodule Membrane.Transcoder do
 
       module when is_atom(module) ->
         %{state | output_stream_format: struct(module)}
+
+      {module, opts} when is_atom(module) and is_list(opts) ->
+        %{state | output_stream_format: struct(module, opts)}
 
       resolver when is_function(resolver) ->
         %{state | output_stream_format: resolver.(state.input_stream_format)}
