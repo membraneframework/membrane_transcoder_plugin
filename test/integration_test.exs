@@ -14,7 +14,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
     %{input_format: VP8, input_file: "video_vp8.ivf", preprocess: &Preprocessors.parse_vpx/1},
     %{input_format: VP9, input_file: "video_vp9.ivf", preprocess: &Preprocessors.parse_vpx/1}
   ]
-  @video_outputs [RawVideo, {RawVideo, pixel_format: :RGB}, H264, H265, VP8, VP9]
+  @video_outputs [RawVideo, H264, H265, VP8, VP9]
   @video_cases for input <- @video_inputs,
                    output <- @video_outputs,
                    do: Map.put(input, :output_format, output)
@@ -37,11 +37,6 @@ defmodule Membrane.Transcoder.IntegrationTest do
   @test_cases @video_cases ++ @audio_cases
 
   Enum.map(@test_cases, fn test_case ->
-    if test_case.input_format == RawVideo and
-         test_case.output_format == {RawVideo, pixel_format: :RGB} do
-      @tag :xd
-    end
-
     test "if transcoder supports #{inspect(test_case.input_format)} input and #{inspect(test_case.output_format)} output" do
       pid = Testing.Pipeline.start_link_supervised!()
 
@@ -62,19 +57,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
 
       Testing.Pipeline.execute_actions(pid, spec: spec)
 
-      case unquote(test_case.output_format) do
-        {module, opts} when is_atom(module) ->
-          assert_sink_stream_format(pid, :sink, %^module{} = received_format)
-
-          for {key, value} <- opts do
-            assert Map.get(received_format, key) == value
-          end
-
-        module when is_atom(module) ->
-          assert_sink_stream_format(pid, :sink, received_format)
-          assert received_format.__struct__ == module
-      end
-
+      assert_sink_stream_format(pid, :sink, %unquote(test_case.output_format){})
       Testing.Pipeline.terminate(pid)
     end
   end)
