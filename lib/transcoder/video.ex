@@ -151,11 +151,11 @@ defmodule Membrane.Transcoder.Video do
     # output pixel format is nil when the transcoder outptu format was set to
     # Membrane.RawVideo module without specifying pixel_format field
 
-    if pixel_format(output_format) not in [nil, pixel_format(input_format)] do
+    if pixel_format(output_format) in [nil, pixel_format(input_format)] do
       builder
-      |> child(:raw_video_converter, %SWScale.Converter{format: pixel_format(output_format)})
     else
       builder
+      |> child(:raw_video_converter, %SWScale.Converter{format: pixel_format(output_format)})
     end
   end
 
