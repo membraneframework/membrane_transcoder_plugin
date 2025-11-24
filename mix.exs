@@ -1,7 +1,7 @@
 defmodule Membrane.Transcoder.Plugin.Mixfile do
   use Mix.Project
 
-  @version "0.3.2"
+  @version "0.3.3"
   @github_url "https://github.com/membraneframework/membrane_transcoder_plugin"
 
   def project do
@@ -46,6 +46,7 @@ defmodule Membrane.Transcoder.Plugin.Mixfile do
       {:membrane_h264_ffmpeg_plugin, "~> 0.32.0"},
       {:membrane_h265_ffmpeg_plugin, "~> 0.4.2"},
       {:membrane_ffmpeg_swresample_plugin, "~> 0.20.0"},
+      {:membrane_ffmpeg_swscale_plugin, "~> 0.16.2"},
       {:membrane_timestamp_queue, "~> 0.2.2"},
       {:membrane_h264_format, "~> 0.6.1"},
       {:membrane_h265_format, "~> 0.2.0"},

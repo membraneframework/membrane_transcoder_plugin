@@ -4,6 +4,7 @@ defmodule Membrane.Transcoder.Video do
   import Membrane.ChildrenSpec
   require Membrane.Logger
   alias Membrane.{ChildrenSpec, H264, H265, RawVideo, RemoteStream, VP8, VP9}
+  alias Membrane.FFmpeg.SWScale
 
   @type video_stream_format :: VP8.t() | VP9.t() | H264.t() | H265.t() | RawVideo.t()
 
@@ -74,6 +75,16 @@ defmodule Membrane.Transcoder.Video do
 
   defp do_plug_video_transcoding(
          builder,
+         %RawVideo{} = input_format,
+         %RawVideo{} = output_format,
+         _transcoding_policy
+       ) do
+    builder
+    |> maybe_plug_swscale_converter(input_format, output_format)
+  end
+
+  defp do_plug_video_transcoding(
+         builder,
          %format_module{},
          %format_module{},
          transcoding_policy
@@ -96,6 +107,7 @@ defmodule Membrane.Transcoder.Video do
   defp do_plug_video_transcoding(builder, input_format, output_format, _transcoding_policy) do
     builder
     |> maybe_plug_parser_and_decoder(input_format)
+    |> maybe_plug_swscale_converter(input_format, output_format)
     |> maybe_plug_encoder_and_parser(output_format)
   end
 
@@ -134,6 +146,21 @@ defmodule Membrane.Transcoder.Video do
   defp maybe_plug_parser_and_decoder(builder, %RawVideo{}) do
     builder
   end
+
+  defp maybe_plug_swscale_converter(builder, input_format, output_format) do
+    # output pixel format is nil when the transcoder outptu format was set to
+    # Membrane.RawVideo module without specifying pixel_format field
+
+    if pixel_format(output_format) not in [nil, pixel_format(input_format)] do
+      builder
+      |> child(:raw_video_converter, %SWScale.Converter{format: pixel_format(output_format)})
+    else
+      builder
+    end
+  end
+
+  defp pixel_format(%RawVideo{pixel_format: pixel_format}), do: pixel_format
+  defp pixel_format(_encoded_video), do: :I420
 
   defp maybe_plug_encoder_and_parser(builder, %H264{} = h264) do
     builder
