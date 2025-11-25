@@ -37,11 +37,6 @@ defmodule Membrane.Transcoder.IntegrationTest do
   @test_cases @video_cases ++ @audio_cases
 
   Enum.map(@test_cases, fn test_case ->
-    if test_case.input_format == RawVideo and
-         test_case.output_format == {RawVideo, pixel_format: :RGB} do
-      @tag :xd
-    end
-
     test "if transcoder supports #{inspect(test_case.input_format)} input and #{inspect(test_case.output_format)} output" do
       pid = Testing.Pipeline.start_link_supervised!()
 
