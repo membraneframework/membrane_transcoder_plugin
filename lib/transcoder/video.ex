@@ -147,14 +147,6 @@ defmodule Membrane.Transcoder.Video do
     builder
   end
 
-  defp maybe_plug_swscale_converter(
-         builder,
-         %RawVideo{pixel_format: pixel_format},
-         %RawVideo{pixel_format: pixel_format}
-       ) do
-    builder
-  end
-
   defp maybe_plug_swscale_converter(builder, input_format, %RawVideo{} = output_format) do
     case input_format do
       _any when output_format.pixel_format == nil ->
