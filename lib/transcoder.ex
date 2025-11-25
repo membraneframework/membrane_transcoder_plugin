@@ -85,6 +85,7 @@ defmodule Membrane.Transcoder do
                 spec:
                   stream_format()
                   | stream_format_module()
+                  | stream_format_tuple()
                   | stream_format_resolver(),
                 description: """
                 An option specifying desired output format.

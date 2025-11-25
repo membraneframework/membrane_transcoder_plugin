@@ -147,20 +147,45 @@ defmodule Membrane.Transcoder.Video do
     builder
   end
 
-  defp maybe_plug_swscale_converter(builder, input_format, output_format) do
-    # output pixel format is nil when the transcoder outptu format was set to
-    # Membrane.RawVideo module without specifying pixel_format field
+  defp maybe_plug_swscale_converter(
+         builder,
+         %RawVideo{pixel_format: pixel_format},
+         %RawVideo{pixel_format: pixel_format}
+       ) do
+    builder
+  end
 
-    if pixel_format(output_format) in [nil, pixel_format(input_format)] do
-      builder
-    else
-      builder
-      |> child(:raw_video_converter, %SWScale.Converter{format: pixel_format(output_format)})
+  defp maybe_plug_swscale_converter(builder, input_format, %RawVideo{} = output_format) do
+    case input_format do
+      _any when output_format.pixel_format == nil ->
+        builder
+
+      %RawVideo{pixel_format: pixel_format} when pixel_format == output_format.pixel_format ->
+        builder
+
+      _input_format ->
+        builder
+        |> child(:raw_video_converter, %SWScale.Converter{format: output_format.pixel_format})
     end
   end
 
-  defp pixel_format(%RawVideo{pixel_format: pixel_format}), do: pixel_format
-  defp pixel_format(_encoded_video), do: :I420
+  defp maybe_plug_swscale_converter(builder, input_format, %h26x{}) when h26x in [H264, H265] do
+    case input_format do
+      %RawVideo{pixel_format: pixel_format} when pixel_format in [:I420, :I422] ->
+        builder
+
+      %h26x{} when h26x in [H264, H265] ->
+        builder
+
+      _input_format ->
+        builder
+        |> child(:raw_video_converter, %SWScale.Converter{format: :I420})
+    end
+  end
+
+  defp maybe_plug_swscale_converter(builder, _input_format, _output_format) do
+    builder
+  end
 
   defp maybe_plug_encoder_and_parser(builder, %H264{} = h264) do
     builder
