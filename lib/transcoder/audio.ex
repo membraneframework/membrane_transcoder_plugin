@@ -58,10 +58,7 @@ defmodule Membrane.Transcoder.Audio do
   defguard is_mp3_compliant(format)
            when is_map_key(format, :sample_rate) and format.sample_rate == 44_100 and
                   is_map_key(format, :sample_format) and format.sample_format == :s32le and
-                  is_map_key(
-                    format,
-                    :channels
-                  ) and format.channels == 2
+                  is_map_key(format, :channels) and format.channels == 2
 
   @spec plug_audio_transcoding(
           ChildrenSpec.builder(),

@@ -4,6 +4,7 @@ defmodule Membrane.Transcoder.Video do
   import Membrane.ChildrenSpec
   require Membrane.Logger
   alias Membrane.{ChildrenSpec, H264, H265, RawVideo, RemoteStream, VP8, VP9}
+  alias Membrane.FFmpeg.SWScale
 
   @type video_stream_format :: VP8.t() | VP9.t() | H264.t() | H265.t() | RawVideo.t()
 
@@ -74,6 +75,16 @@ defmodule Membrane.Transcoder.Video do
 
   defp do_plug_video_transcoding(
          builder,
+         %RawVideo{} = input_format,
+         %RawVideo{} = output_format,
+         _transcoding_policy
+       ) do
+    builder
+    |> maybe_plug_swscale_converter(input_format, output_format)
+  end
+
+  defp do_plug_video_transcoding(
+         builder,
          %format_module{},
          %format_module{},
          transcoding_policy
@@ -96,6 +107,7 @@ defmodule Membrane.Transcoder.Video do
   defp do_plug_video_transcoding(builder, input_format, output_format, _transcoding_policy) do
     builder
     |> maybe_plug_parser_and_decoder(input_format)
+    |> maybe_plug_swscale_converter(input_format, output_format)
     |> maybe_plug_encoder_and_parser(output_format)
   end
 
@@ -132,6 +144,38 @@ defmodule Membrane.Transcoder.Video do
   end
 
   defp maybe_plug_parser_and_decoder(builder, %RawVideo{}) do
+    builder
+  end
+
+  defp maybe_plug_swscale_converter(builder, input_format, %RawVideo{} = output_format) do
+    case input_format do
+      _any when output_format.pixel_format == nil ->
+        builder
+
+      %RawVideo{pixel_format: pixel_format} when pixel_format == output_format.pixel_format ->
+        builder
+
+      _input_format ->
+        builder
+        |> child(:raw_video_converter, %SWScale.Converter{format: output_format.pixel_format})
+    end
+  end
+
+  defp maybe_plug_swscale_converter(builder, input_format, %h26x{}) when h26x in [H264, H265] do
+    case input_format do
+      %RawVideo{pixel_format: pixel_format} when pixel_format in [:I420, :I422] ->
+        builder
+
+      %h26x{} when h26x in [H264, H265] ->
+        builder
+
+      _input_format ->
+        builder
+        |> child(:raw_video_converter, %SWScale.Converter{format: :I420})
+    end
+  end
+
+  defp maybe_plug_swscale_converter(builder, _input_format, _output_format) do
     builder
   end
 
