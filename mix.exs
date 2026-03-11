@@ -1,7 +1,7 @@
 defmodule Membrane.Transcoder.Plugin.Mixfile do
   use Mix.Project
 
-  @version "0.3.3"
+  @version "0.3.4"
   @github_url "https://github.com/membraneframework/membrane_transcoder_plugin"
 
   def project do
@@ -94,7 +94,6 @@ defmodule Membrane.Transcoder.Plugin.Mixfile do
     [
       main: "readme",
       extras: ["README.md", "LICENSE"],
-      formatters: ["html"],
       source_ref: "v#{@version}",
       nest_modules_by_prefix: [Membrane.Template]
     ]
