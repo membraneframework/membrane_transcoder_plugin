@@ -89,11 +89,14 @@ defmodule Membrane.Transcoder.IntegrationTest do
   end
 
   test "if encoder and decoder are spawned or not, depending on the value of `transcoding_policy` option" do
-    for format <- [%AAC{channels: 1}, %H264{alignment: :au, stream_structure: :annexb}],
+    for format <- [
+          %AAC{channels: 1, sample_rate: 44_100, profile: :LC},
+          %H264{alignment: :au, stream_structure: :annexb}
+        ],
         transcoding_policy <- [:always, :if_needed, :never] do
       output_format =
         case format do
-          %H264{} -> %H264{format | stream_structure: :avc1}
+          %H264{} = h264 -> %H264{h264 | stream_structure: :avc1}
           %AAC{} -> format
         end
 
