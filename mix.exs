@@ -57,9 +57,9 @@ defmodule Membrane.Transcoder.Plugin.Mixfile do
       {:membrane_mpegaudio_format, "~> 0.3.0"},
       {:membrane_mp3_mad_plugin, "~> 0.18.4"},
       {:membrane_mp3_lame_plugin, "~> 0.18.3"},
-      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
-      {:dialyxir, ">= 0.0.0", only: :dev, runtime: false},
-      {:credo, ">= 0.0.0", only: :dev, runtime: false},
+      {:ex_doc, "~> 0.34", only: :dev, runtime: false},
+      {:dialyxir, "~> 1.4", only: :dev, runtime: false},
+      {:credo, "~> 1.7", only: :dev, runtime: false},
       {:membrane_file_plugin, "~> 0.17.2", only: :test},
       {:membrane_raw_audio_parser_plugin, "~> 0.4.0", only: :test},
       {:membrane_ivf_plugin, "~> 0.8.0", only: :test}
@@ -68,7 +68,8 @@ defmodule Membrane.Transcoder.Plugin.Mixfile do
 
   defp dialyzer() do
     opts = [
-      flags: [:error_handling]
+      flags: [:error_handling],
+      plt_add_apps: [:mix, :syntax_tools]
     ]
 
     if System.get_env("CI") == "true" do
