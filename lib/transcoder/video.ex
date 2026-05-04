@@ -33,29 +33,50 @@ defmodule Membrane.Transcoder.Video do
           ChildrenSpec.builder(),
           video_stream_format(),
           video_stream_format(),
+          :always | :if_needed | :never,
           boolean()
         ) :: ChildrenSpec.builder()
-  def plug_video_transcoding(builder, input_format, output_format, transcoding_policy)
+  def plug_video_transcoding(
+        builder,
+        input_format,
+        output_format,
+        transcoding_policy,
+        use_vulkan?
+      )
       when is_video_format(input_format) and is_video_format(output_format) do
-    do_plug_video_transcoding(builder, input_format, output_format, transcoding_policy)
+    do_plug_video_transcoding(
+      builder,
+      input_format,
+      output_format,
+      transcoding_policy,
+      use_vulkan?
+    )
   end
 
   defp do_plug_video_transcoding(
          builder,
          %RemoteStream{content_format: h26x},
          output_format,
-         transcoding_policy
+         transcoding_policy,
+         use_vulkan?
        )
        when h26x in [H264, H265] do
     do_plug_video_transcoding(
       builder,
       struct!(h26x),
       output_format,
-      transcoding_policy
+      transcoding_policy,
+      use_vulkan?
     )
   end
 
-  defp do_plug_video_transcoding(builder, %H264{}, %H264{} = output_format, transcoding_policy)
+  defp do_plug_video_transcoding(
+         builder,
+         %H264{},
+         %H264{} = output_format,
+         transcoding_policy,
+         _use_vulkan?
+       )
        when transcoding_policy in [:if_needed, :never] do
     builder
     |> child(:h264_parser, %H264.Parser{
@@ -64,7 +85,13 @@ defmodule Membrane.Transcoder.Video do
     })
   end
 
-  defp do_plug_video_transcoding(builder, %H265{}, %H265{} = output_format, transcoding_policy)
+  defp do_plug_video_transcoding(
+         builder,
+         %H265{},
+         %H265{} = output_format,
+         transcoding_policy,
+         _use_vulkan?
+       )
        when transcoding_policy in [:if_needed, :never] do
     builder
     |> child(:h265_parser, %H265.Parser{
@@ -77,7 +104,19 @@ defmodule Membrane.Transcoder.Video do
          builder,
          %RawVideo{} = input_format,
          %RawVideo{} = output_format,
-         _transcoding_policy
+         _transcoding_policy,
+         true
+       ) do
+    builder
+    |> maybe_plug_swscale_converter_vulkan(input_format, output_format)
+  end
+
+  defp do_plug_video_transcoding(
+         builder,
+         %RawVideo{} = input_format,
+         %RawVideo{} = output_format,
+         _transcoding_policy,
+         false
        ) do
     builder
     |> maybe_plug_swscale_converter(input_format, output_format)
@@ -87,7 +126,8 @@ defmodule Membrane.Transcoder.Video do
          builder,
          %format_module{},
          %format_module{},
-         transcoding_policy
+         transcoding_policy,
+         _use_vulkan?
        )
        when transcoding_policy in [:if_needed, :never] do
     Membrane.Logger.debug("""
@@ -97,19 +137,39 @@ defmodule Membrane.Transcoder.Video do
     builder
   end
 
-  defp do_plug_video_transcoding(_builder, input_format, output_format, :never) do
-    raise """
-    Cannot convert input format #{inspect(input_format)} to output format #{inspect(output_format)} \
-    with :transcoding_policy option set to :never.
-    """
+  defp do_plug_video_transcoding(_builder, input_format, output_format, :never, _use_vulkan?),
+    do:
+      raise("""
+      Cannot convert input format #{inspect(input_format)} to output format #{inspect(output_format)} \
+      with :transcoding_policy option set to :never.
+      """)
+
+  defp do_plug_video_transcoding(builder, input_format, output_format, _transcoding_policy, true) do
+    builder
+    |> maybe_plug_parser_and_decoder_vulkan(input_format)
+    |> maybe_plug_swscale_converter_vulkan(input_format, output_format)
+    |> maybe_plug_encoder_and_parser_vulkan(output_format)
   end
 
-  defp do_plug_video_transcoding(builder, input_format, output_format, _transcoding_policy) do
+  defp do_plug_video_transcoding(builder, input_format, output_format, _transcoding_policy, false) do
     builder
     |> maybe_plug_parser_and_decoder(input_format)
     |> maybe_plug_swscale_converter(input_format, output_format)
     |> maybe_plug_encoder_and_parser(output_format)
   end
+
+  # VK-specific decoder: child name :vk_h264_decoder distinguishes it from FFmpeg's :h264_decoder
+  defp maybe_plug_parser_and_decoder_vulkan(builder, %H264{}) do
+    builder
+    |> child(:h264_input_parser, %H264.Parser{
+      output_stream_structure: :annexb,
+      output_alignment: :au
+    })
+    |> child(:vk_h264_decoder, Membrane.VKVideo.Decoder)
+  end
+
+  defp maybe_plug_parser_and_decoder_vulkan(builder, format),
+    do: maybe_plug_parser_and_decoder(builder, format)
 
   defp maybe_plug_parser_and_decoder(builder, %H264{}) do
     builder
@@ -143,9 +203,40 @@ defmodule Membrane.Transcoder.Video do
     builder |> child(:vp8_decoder, decoder_module)
   end
 
-  defp maybe_plug_parser_and_decoder(builder, %RawVideo{}) do
-    builder
+  defp maybe_plug_parser_and_decoder(builder, %RawVideo{}), do: builder
+
+  # VK decoder outputs NV12; these clauses handle the NV12 <-> other-format conversion
+  # when mixing VK decode/encode with different pixel formats.
+
+  defp maybe_plug_swscale_converter_vulkan(builder, %H264{}, %RawVideo{pixel_format: nil}),
+    do: builder
+
+  defp maybe_plug_swscale_converter_vulkan(builder, %H264{}, %RawVideo{pixel_format: :NV12}),
+    do: builder
+
+  defp maybe_plug_swscale_converter_vulkan(builder, %H264{}, %RawVideo{} = output_format) do
+    builder |> child(:raw_video_converter, %SWScale.Converter{format: output_format.pixel_format})
   end
+
+  defp maybe_plug_swscale_converter_vulkan(builder, %RawVideo{pixel_format: :NV12}, %H264{}),
+    do: builder
+
+  defp maybe_plug_swscale_converter_vulkan(builder, %RawVideo{}, %H264{}) do
+    builder |> child(:raw_video_converter, %SWScale.Converter{format: :NV12})
+  end
+
+  defp maybe_plug_swscale_converter_vulkan(builder, %H264{}, %H264{}), do: builder
+
+  defp maybe_plug_swscale_converter_vulkan(builder, %H264{}, _output_format) do
+    builder |> child(:raw_video_converter, %SWScale.Converter{format: :I420})
+  end
+
+  defp maybe_plug_swscale_converter_vulkan(builder, _input_format, %H264{}) do
+    builder |> child(:raw_video_converter, %SWScale.Converter{format: :NV12})
+  end
+
+  defp maybe_plug_swscale_converter_vulkan(builder, input_format, output_format),
+    do: maybe_plug_swscale_converter(builder, input_format, output_format)
 
   defp maybe_plug_swscale_converter(builder, input_format, %RawVideo{} = output_format) do
     case input_format do
@@ -175,9 +266,19 @@ defmodule Membrane.Transcoder.Video do
     end
   end
 
-  defp maybe_plug_swscale_converter(builder, _input_format, _output_format) do
+  defp maybe_plug_swscale_converter(builder, _input_format, _output_format), do: builder
+
+  defp maybe_plug_encoder_and_parser_vulkan(builder, %H264{} = h264) do
     builder
+    |> child(:vk_h264_encoder, Membrane.VKVideo.Encoder)
+    |> child(:h264_output_parser, %H264.Parser{
+      output_stream_structure: stream_structure_type(h264),
+      output_alignment: h264.alignment
+    })
   end
+
+  defp maybe_plug_encoder_and_parser_vulkan(builder, format),
+    do: maybe_plug_encoder_and_parser(builder, format)
 
   defp maybe_plug_encoder_and_parser(builder, %H264{} = h264) do
     builder
@@ -219,9 +320,7 @@ defmodule Membrane.Transcoder.Video do
     builder |> child(:vp8_encoder, %VP9.Encoder{g_threads: number_of_threads, cpu_used: 15})
   end
 
-  defp maybe_plug_encoder_and_parser(builder, %RawVideo{}) do
-    builder
-  end
+  defp maybe_plug_encoder_and_parser(builder, %RawVideo{}), do: builder
 
   defp stream_structure_type(%h26x{stream_structure: stream_structure})
        when h26x in [H264, H265] do
