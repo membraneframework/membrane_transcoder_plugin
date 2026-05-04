@@ -34,6 +34,10 @@ defmodule Membrane.Transcoder.IntegrationTest do
                    output <- @audio_outputs,
                    do: Map.put(input, :output_format, output)
 
+  @vk_video_cases for input <- @video_inputs,
+                      output <- @video_outputs,
+                      do: Map.put(input, :output_format, output)
+
   @test_cases @video_cases ++ @audio_cases
 
   Enum.map(@test_cases, fn test_case ->
@@ -52,6 +56,41 @@ defmodule Membrane.Transcoder.IntegrationTest do
         |> child(%Membrane.Transcoder{
           output_stream_format: unquote(test_case.output_format),
           assumed_input_stream_format: override_input_stream_format
+        })
+        |> child(:sink, Testing.Sink)
+
+      Testing.Pipeline.execute_actions(pid, spec: spec)
+
+      case unquote(test_case.output_format) do
+        {module, opts} when is_atom(module) ->
+          assert_sink_stream_format(pid, :sink, %^module{} = received_format)
+
+          for {key, value} <- opts do
+            assert Map.get(received_format, key) == value
+          end
+
+        module when is_atom(module) ->
+          assert_sink_stream_format(pid, :sink, received_format)
+          assert received_format.__struct__ == module
+      end
+
+      Testing.Pipeline.terminate(pid)
+    end
+  end)
+
+  Enum.map(@vk_video_cases, fn test_case ->
+    @tag :vulkan
+    test "if transcoder supports #{inspect(test_case.input_format)} input and #{inspect(test_case.output_format)} output with native acceleration" do
+      pid = Testing.Pipeline.start_link_supervised!()
+
+      spec =
+        child(%Membrane.File.Source{
+          location: Path.join("./test/fixtures", unquote(test_case.input_file))
+        })
+        |> then(unquote(test_case.preprocess))
+        |> child(%Membrane.Transcoder{
+          output_stream_format: unquote(test_case.output_format),
+          native_acceleration: :if_available
         })
         |> child(:sink, Testing.Sink)
 
@@ -150,5 +189,62 @@ defmodule Membrane.Transcoder.IntegrationTest do
                     {:membrane_child_crash, :transcoder, {%RuntimeError{}, _stacktrace}}}
 
     assert_receive {:DOWN, ^supervisor_ref, :process, _pid, _reason}
+  end
+
+  test "uses FFmpeg decoder and encoder when native_acceleration is :never" do
+    pid = Testing.Pipeline.start_link_supervised!()
+
+    spec =
+      child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
+      |> then(&Preprocessors.parse_h264/1)
+      |> child(:transcoder, %Membrane.Transcoder{
+        output_stream_format: H264,
+        transcoding_policy: :always,
+        native_acceleration: :never
+      })
+      |> child(:sink, Testing.Sink)
+
+    Testing.Pipeline.execute_actions(pid, spec: spec)
+    assert_sink_stream_format(pid, :sink, _format)
+
+    assert {:ok, _pid} = Testing.Pipeline.get_child_pid(pid, [:transcoder, :h264_decoder])
+    assert {:ok, _pid} = Testing.Pipeline.get_child_pid(pid, [:transcoder, :h264_encoder])
+
+    assert {:error, :child_not_found} =
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, :vk_h264_decoder])
+
+    assert {:error, :child_not_found} =
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, :vk_h264_encoder])
+
+    Testing.Pipeline.terminate(pid)
+  end
+
+  @tag :vulkan
+  test "uses VKVideo decoder and encoder when native_acceleration is :if_available" do
+    pid = Testing.Pipeline.start_link_supervised!()
+
+    spec =
+      child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
+      |> then(&Preprocessors.parse_h264/1)
+      |> child(:transcoder, %Membrane.Transcoder{
+        output_stream_format: H264,
+        transcoding_policy: :always,
+        native_acceleration: :if_available
+      })
+      |> child(:sink, Testing.Sink)
+
+    Testing.Pipeline.execute_actions(pid, spec: spec)
+    assert_sink_stream_format(pid, :sink, _format)
+
+    assert {:ok, _pid} = Testing.Pipeline.get_child_pid(pid, [:transcoder, :vk_h264_decoder])
+    assert {:ok, _pid} = Testing.Pipeline.get_child_pid(pid, [:transcoder, :vk_h264_encoder])
+
+    assert {:error, :child_not_found} =
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, :h264_decoder])
+
+    assert {:error, :child_not_found} =
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, :h264_encoder])
+
+    Testing.Pipeline.terminate(pid)
   end
 end

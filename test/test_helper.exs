@@ -5,4 +5,5 @@ max_cases =
     do: 1,
     else: System.schedulers_online() * 2
 
-ExUnit.start(capture_log: true, max_cases: max_cases)
+exclude = if Membrane.Transcoder.vulkan_available?(), do: [], else: [:vulkan]
+ExUnit.start(capture_log: true, max_cases: max_cases, exclude: exclude)
