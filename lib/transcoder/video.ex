@@ -41,7 +41,7 @@ defmodule Membrane.Transcoder.Video do
         input_format,
         output_format,
         transcoding_policy,
-        use_vulkan?
+        use_hardware_acceleration?
       )
       when is_video_format(input_format) and is_video_format(output_format) do
     do_plug_video_transcoding(
@@ -49,7 +49,7 @@ defmodule Membrane.Transcoder.Video do
       input_format,
       output_format,
       transcoding_policy,
-      use_vulkan?
+      use_hardware_acceleration?
     )
   end
 
@@ -58,7 +58,7 @@ defmodule Membrane.Transcoder.Video do
          %RemoteStream{content_format: h26x},
          output_format,
          transcoding_policy,
-         use_vulkan?
+         use_hardware_acceleration?
        )
        when h26x in [H264, H265] do
     do_plug_video_transcoding(
@@ -66,7 +66,7 @@ defmodule Membrane.Transcoder.Video do
       struct!(h26x),
       output_format,
       transcoding_policy,
-      use_vulkan?
+      use_hardware_acceleration?
     )
   end
 
@@ -75,7 +75,7 @@ defmodule Membrane.Transcoder.Video do
          %H264{},
          %H264{} = output_format,
          transcoding_policy,
-         _use_vulkan?
+         _use_hardware_acceleration?
        )
        when transcoding_policy in [:if_needed, :never] do
     builder
@@ -90,7 +90,7 @@ defmodule Membrane.Transcoder.Video do
          %H265{},
          %H265{} = output_format,
          transcoding_policy,
-         _use_vulkan?
+         _use_hardware_acceleration?
        )
        when transcoding_policy in [:if_needed, :never] do
     builder
@@ -127,7 +127,7 @@ defmodule Membrane.Transcoder.Video do
          %format_module{},
          %format_module{},
          transcoding_policy,
-         _use_vulkan?
+         _use_hardware_acceleration?
        )
        when transcoding_policy in [:if_needed, :never] do
     Membrane.Logger.debug("""
@@ -137,12 +137,18 @@ defmodule Membrane.Transcoder.Video do
     builder
   end
 
-  defp do_plug_video_transcoding(_builder, input_format, output_format, :never, _use_vulkan?),
-    do:
-      raise("""
-      Cannot convert input format #{inspect(input_format)} to output format #{inspect(output_format)} \
-      with :transcoding_policy option set to :never.
-      """)
+  defp do_plug_video_transcoding(
+         _builder,
+         input_format,
+         output_format,
+         :never,
+         _use_hardware_acceleration?
+       ),
+       do:
+         raise("""
+         Cannot convert input format #{inspect(input_format)} to output format #{inspect(output_format)} \
+         with :transcoding_policy option set to :never.
+         """)
 
   defp do_plug_video_transcoding(builder, input_format, output_format, _transcoding_policy, true) do
     builder
