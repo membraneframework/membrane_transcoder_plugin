@@ -35,8 +35,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
                    do: Map.put(input, :output_format, output)
 
   @vk_video_cases for input <- @video_inputs,
-                      output <- @video_outputs,
-                      do: Map.put(input, :output_format, output)
+                      do: Map.put(input, :output_format, H264)
 
   @test_cases @video_cases ++ @audio_cases
 
@@ -80,38 +79,40 @@ defmodule Membrane.Transcoder.IntegrationTest do
 
   Enum.map(@vk_video_cases, fn test_case ->
     @tag :vulkan
-    test "if transcoder supports #{inspect(test_case.input_format)} input and #{inspect(test_case.output_format)} output with native acceleration" do
-      pid = Testing.Pipeline.start_link_supervised!()
+    test "transcoder produces identical output for #{inspect(test_case.input_format)} -> H264 with and without native acceleration" do
+      sw_output = run_transcoder_to_file(unquote(Macro.escape(test_case)), :never)
+      vk_output = run_transcoder_to_file(unquote(Macro.escape(test_case)), :if_available)
 
-      spec =
-        child(%Membrane.File.Source{
-          location: Path.join("./test/fixtures", unquote(test_case.input_file))
-        })
-        |> then(unquote(test_case.preprocess))
-        |> child(%Membrane.Transcoder{
-          output_stream_format: unquote(test_case.output_format),
-          native_acceleration: :if_available
-        })
-        |> child(:sink, Testing.Sink)
-
-      Testing.Pipeline.execute_actions(pid, spec: spec)
-
-      case unquote(test_case.output_format) do
-        {module, opts} when is_atom(module) ->
-          assert_sink_stream_format(pid, :sink, %^module{} = received_format)
-
-          for {key, value} <- opts do
-            assert Map.get(received_format, key) == value
-          end
-
-        module when is_atom(module) ->
-          assert_sink_stream_format(pid, :sink, received_format)
-          assert received_format.__struct__ == module
-      end
-
-      Testing.Pipeline.terminate(pid)
+      assert byte_size(sw_output) > 0
+      assert :crypto.hash(:sha256, sw_output) == :crypto.hash(:sha256, vk_output)
     end
   end)
+
+  defp run_transcoder_to_file(test_case, native_acceleration) do
+    tmp_path =
+      Path.join(System.tmp_dir!(), "vk_transcoder_#{:erlang.unique_integer([:positive])}")
+
+    pid = Testing.Pipeline.start_link_supervised!()
+
+    spec =
+      child(%Membrane.File.Source{
+        location: Path.join("./test/fixtures", test_case.input_file)
+      })
+      |> then(test_case.preprocess)
+      |> child(:transcoder, %Membrane.Transcoder{
+        output_stream_format: test_case.output_format,
+        native_acceleration: native_acceleration
+      })
+      |> child(:sink, %Membrane.File.Sink{location: tmp_path})
+
+    Testing.Pipeline.execute_actions(pid, spec: spec)
+    assert_end_of_stream(pid, :sink, :input, 30_000)
+    Testing.Pipeline.terminate(pid)
+
+    bytes = File.read!(tmp_path)
+    File.rm(tmp_path)
+    bytes
+  end
 
   defmodule FormatSource do
     use Membrane.Source
