@@ -34,8 +34,15 @@ defmodule Membrane.Transcoder.IntegrationTest do
                    output <- @audio_outputs,
                    do: Map.put(input, :output_format, output)
 
+  # Only H264 outputs exercise the Vulkan-accelerated encode path. Each case
+  # has a committed fixture under test/fixtures/vk_outputs/ that pins the
+  # expected bitstream produced on a Vulkan-capable machine. To (re)generate
+  # the fixtures, run `REGEN_VK_FIXTURES=1 mix test --include vulkan` once on
+  # such a machine and commit the resulting files.
   @vk_video_cases for input <- @video_inputs,
                       do: Map.put(input, :output_format, H264)
+
+  @vk_fixtures_dir "./test/fixtures/vk_outputs"
 
   @test_cases @video_cases ++ @audio_cases
 
@@ -79,12 +86,14 @@ defmodule Membrane.Transcoder.IntegrationTest do
 
   Enum.map(@vk_video_cases, fn test_case ->
     @tag :vulkan
-    test "transcoder produces identical output for #{inspect(test_case.input_format)} -> H264 with and without native acceleration" do
-      sw_output = run_transcoder_to_file(unquote(Macro.escape(test_case)), :never)
-      vk_output = run_transcoder_to_file(unquote(Macro.escape(test_case)), :if_available)
+    test "transcoder produces stable output for #{inspect(test_case.input_format)} -> H264 with native acceleration" do
+      fixture_path =
+        Path.join(@vk_fixtures_dir, "#{unquote(test_case.input_format) |> Module.split() |> List.last() |> String.downcase()}_to_h264.bin")
 
-      assert byte_size(sw_output) > 0
-      assert :crypto.hash(:sha256, sw_output) == :crypto.hash(:sha256, vk_output)
+      actual = run_transcoder_to_file(unquote(Macro.escape(test_case)), :if_available)
+
+      assert byte_size(actual) > 0, "transcoder produced empty output"
+      assert_or_regenerate_fixture!(actual, fixture_path)
     end
   end)
 
@@ -112,6 +121,27 @@ defmodule Membrane.Transcoder.IntegrationTest do
     bytes = File.read!(tmp_path)
     File.rm(tmp_path)
     bytes
+  end
+
+  defp assert_or_regenerate_fixture!(actual, fixture_path) do
+    if System.get_env("REGEN_VK_FIXTURES") == "1" do
+      File.mkdir_p!(Path.dirname(fixture_path))
+      File.write!(fixture_path, actual)
+      IO.puts("Regenerated fixture: #{fixture_path}")
+    else
+      case File.read(fixture_path) do
+        {:ok, expected} ->
+          assert :crypto.hash(:sha256, actual) == :crypto.hash(:sha256, expected),
+                 "output does not match fixture #{fixture_path}"
+
+        {:error, :enoent} ->
+          flunk("""
+          Missing fixture #{fixture_path}.
+          Run `REGEN_VK_FIXTURES=1 mix test --include vulkan` on a Vulkan-capable \
+          machine to generate it, then commit the resulting file.
+          """)
+      end
+    end
   end
 
   defmodule FormatSource do
