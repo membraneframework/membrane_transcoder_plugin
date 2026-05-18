@@ -26,6 +26,9 @@ defmodule Membrane.Transcoder do
   Now, the only supported stream parameters are:
   * `:pixel_format` in `Membrane.RawVideo`
   * `:alignment` and `:stream_structure` in `Membrane.H264` and `Membrane.H265`
+
+  When the `membrane_vk_video_plugin` dependency is present and Vulkan hardware is available,
+  H.264 encode/decode can be offloaded to the GPU by setting `native_acceleration: :if_available`.
   """
   use Membrane.Bin
 
@@ -139,6 +142,17 @@ defmodule Membrane.Transcoder do
 
                 If nil or not set, the input stream format won't be overriden.
                 """
+              ],
+              native_acceleration: [
+                spec: :never | :if_available,
+                default: :never,
+                description: """
+                Specifies whether to use Vulkan hardware acceleration for video transcoding.
+
+                Can be:
+                * `:never` - Always use software-based transcoding (default)
+                * `:if_available` - Use Vulkan acceleration when available on the system
+                """
               ]
 
   @impl true
@@ -155,10 +169,29 @@ defmodule Membrane.Transcoder do
       opts
       |> Map.from_struct()
       |> Map.merge(%{
-        input_stream_format: nil
+        input_stream_format: nil,
+        use_hardware_acceleration?: should_use_hardware_acceleration?(opts.native_acceleration)
       })
 
     {[spec: spec], state}
+  end
+
+  defp should_use_hardware_acceleration?(:if_available), do: vulkan_available?()
+  defp should_use_hardware_acceleration?(_native_acceleration), do: false
+
+  @doc """
+  Returns `true` if the optional `membrane_vk_video_plugin` dependency is installed
+  and its modules can be loaded in the current runtime.
+
+  Note: a `true` result only confirms the plugin is loadable - it does not guarantee that the
+  host actually exposes Vulkan Video extensions with H.264 encode/decode capabilities. The
+  underlying plugin may still fail at runtime if the GPU/driver does not support them.
+  """
+  @spec vulkan_available?() :: boolean()
+  def vulkan_available?() do
+    Code.ensure_loaded?(Membrane.VKVideo.Decoder) and
+      Code.ensure_loaded?(Membrane.VKVideo.Encoder) and
+      Code.ensure_loaded?(Membrane.VKVideo.Native)
   end
 
   defp maybe_plug_stream_format_changer(builder, nil), do: builder
@@ -187,7 +220,8 @@ defmodule Membrane.Transcoder do
       |> plug_transcoding(
         format,
         state.output_stream_format,
-        state.transcoding_policy
+        state.transcoding_policy,
+        state.use_hardware_acceleration?
       )
       |> get_child(:output_funnel)
 
@@ -232,15 +266,32 @@ defmodule Membrane.Transcoder do
     end
   end
 
-  defp plug_transcoding(builder, input_format, output_format, transcoding_policy)
+  defp plug_transcoding(
+         builder,
+         input_format,
+         output_format,
+         transcoding_policy,
+         _use_hardware_acceleration?
+       )
        when Audio.is_audio_format(input_format) do
     builder
     |> Audio.plug_audio_transcoding(input_format, output_format, transcoding_policy)
   end
 
-  defp plug_transcoding(builder, input_format, output_format, transcoding_policy)
+  defp plug_transcoding(
+         builder,
+         input_format,
+         output_format,
+         transcoding_policy,
+         use_hardware_acceleration?
+       )
        when Video.is_video_format(input_format) do
     builder
-    |> Video.plug_video_transcoding(input_format, output_format, transcoding_policy)
+    |> Video.plug_video_transcoding(
+      input_format,
+      output_format,
+      transcoding_policy,
+      use_hardware_acceleration?
+    )
   end
 end

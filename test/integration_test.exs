@@ -34,6 +34,16 @@ defmodule Membrane.Transcoder.IntegrationTest do
                    output <- @audio_outputs,
                    do: Map.put(input, :output_format, output)
 
+  # Only H264 outputs exercise the Vulkan-accelerated encode path. Each case
+  # has a committed fixture under test/fixtures/vk_outputs/ that pins the
+  # expected bitstream produced on a Vulkan-capable machine. To (re)generate
+  # the fixtures, run `REGEN_VK_FIXTURES=1 mix test --include vulkan` once on
+  # such a machine and commit the resulting files.
+  @vk_video_cases for input <- @video_inputs,
+                      do: Map.put(input, :output_format, H264)
+
+  @vk_fixtures_dir "./test/fixtures/vk_outputs"
+
   @test_cases @video_cases ++ @audio_cases
 
   Enum.map(@test_cases, fn test_case ->
@@ -73,6 +83,66 @@ defmodule Membrane.Transcoder.IntegrationTest do
       Testing.Pipeline.terminate(pid)
     end
   end)
+
+  Enum.map(@vk_video_cases, fn test_case ->
+    @tag :vulkan
+    test "transcoder produces stable output for #{inspect(test_case.input_format)} -> H264 with native acceleration" do
+      fixture_path =
+        Path.join(@vk_fixtures_dir, "#{unquote(test_case.input_format) |> Module.split() |> List.last() |> String.downcase()}_to_h264.bin")
+
+      actual = run_transcoder_to_file(unquote(Macro.escape(test_case)), :if_available)
+
+      assert byte_size(actual) > 0, "transcoder produced empty output"
+      assert_or_regenerate_fixture!(actual, fixture_path)
+    end
+  end)
+
+  defp run_transcoder_to_file(test_case, native_acceleration) do
+    tmp_path =
+      Path.join(System.tmp_dir!(), "vk_transcoder_#{:erlang.unique_integer([:positive])}")
+
+    pid = Testing.Pipeline.start_link_supervised!()
+
+    spec =
+      child(%Membrane.File.Source{
+        location: Path.join("./test/fixtures", test_case.input_file)
+      })
+      |> then(test_case.preprocess)
+      |> child(:transcoder, %Membrane.Transcoder{
+        output_stream_format: test_case.output_format,
+        native_acceleration: native_acceleration
+      })
+      |> child(:sink, %Membrane.File.Sink{location: tmp_path})
+
+    Testing.Pipeline.execute_actions(pid, spec: spec)
+    assert_end_of_stream(pid, :sink, :input, 30_000)
+    Testing.Pipeline.terminate(pid)
+
+    bytes = File.read!(tmp_path)
+    File.rm(tmp_path)
+    bytes
+  end
+
+  defp assert_or_regenerate_fixture!(actual, fixture_path) do
+    if System.get_env("REGEN_VK_FIXTURES") == "1" do
+      File.mkdir_p!(Path.dirname(fixture_path))
+      File.write!(fixture_path, actual)
+      IO.puts("Regenerated fixture: #{fixture_path}")
+    else
+      case File.read(fixture_path) do
+        {:ok, expected} ->
+          assert :crypto.hash(:sha256, actual) == :crypto.hash(:sha256, expected),
+                 "output does not match fixture #{fixture_path}"
+
+        {:error, :enoent} ->
+          flunk("""
+          Missing fixture #{fixture_path}.
+          Run `REGEN_VK_FIXTURES=1 mix test --include vulkan` on a Vulkan-capable \
+          machine to generate it, then commit the resulting file.
+          """)
+      end
+    end
+  end
 
   defmodule FormatSource do
     use Membrane.Source
@@ -150,5 +220,62 @@ defmodule Membrane.Transcoder.IntegrationTest do
                     {:membrane_child_crash, :transcoder, {%RuntimeError{}, _stacktrace}}}
 
     assert_receive {:DOWN, ^supervisor_ref, :process, _pid, _reason}
+  end
+
+  test "uses FFmpeg decoder and encoder when native_acceleration is :never" do
+    pid = Testing.Pipeline.start_link_supervised!()
+
+    spec =
+      child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
+      |> then(&Preprocessors.parse_h264/1)
+      |> child(:transcoder, %Membrane.Transcoder{
+        output_stream_format: H264,
+        transcoding_policy: :always,
+        native_acceleration: :never
+      })
+      |> child(:sink, Testing.Sink)
+
+    Testing.Pipeline.execute_actions(pid, spec: spec)
+    assert_sink_stream_format(pid, :sink, _format)
+
+    assert {:ok, _pid} = Testing.Pipeline.get_child_pid(pid, [:transcoder, :h264_decoder])
+    assert {:ok, _pid} = Testing.Pipeline.get_child_pid(pid, [:transcoder, :h264_encoder])
+
+    assert {:error, :child_not_found} =
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, :vk_h264_decoder])
+
+    assert {:error, :child_not_found} =
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, :vk_h264_encoder])
+
+    Testing.Pipeline.terminate(pid)
+  end
+
+  @tag :vulkan
+  test "uses VKVideo decoder and encoder when native_acceleration is :if_available" do
+    pid = Testing.Pipeline.start_link_supervised!()
+
+    spec =
+      child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
+      |> then(&Preprocessors.parse_h264/1)
+      |> child(:transcoder, %Membrane.Transcoder{
+        output_stream_format: H264,
+        transcoding_policy: :always,
+        native_acceleration: :if_available
+      })
+      |> child(:sink, Testing.Sink)
+
+    Testing.Pipeline.execute_actions(pid, spec: spec)
+    assert_sink_stream_format(pid, :sink, _format)
+
+    assert {:ok, _pid} = Testing.Pipeline.get_child_pid(pid, [:transcoder, :vk_h264_decoder])
+    assert {:ok, _pid} = Testing.Pipeline.get_child_pid(pid, [:transcoder, :vk_h264_encoder])
+
+    assert {:error, :child_not_found} =
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, :h264_decoder])
+
+    assert {:error, :child_not_found} =
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, :h264_encoder])
+
+    Testing.Pipeline.terminate(pid)
   end
 end
