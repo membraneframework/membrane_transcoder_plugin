@@ -88,7 +88,10 @@ defmodule Membrane.Transcoder.IntegrationTest do
     @tag :vulkan
     test "transcoder produces stable output for #{inspect(test_case.input_format)} -> H264 with native acceleration" do
       fixture_path =
-        Path.join(@vk_fixtures_dir, "#{unquote(test_case.input_format) |> Module.split() |> List.last() |> String.downcase()}_to_h264.bin")
+        Path.join(
+          @vk_fixtures_dir,
+          "#{unquote(test_case.input_format) |> Module.split() |> List.last() |> String.downcase()}_to_h264.h264"
+        )
 
       actual = run_transcoder_to_file(unquote(Macro.escape(test_case)), :if_available)
 
