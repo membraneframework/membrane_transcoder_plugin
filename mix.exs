@@ -1,7 +1,7 @@
 defmodule Membrane.Transcoder.Plugin.Mixfile do
   use Mix.Project
 
-  @version "0.3.3"
+  @version "0.3.4"
   @github_url "https://github.com/membraneframework/membrane_transcoder_plugin"
 
   def project do
@@ -37,6 +37,7 @@ defmodule Membrane.Transcoder.Plugin.Mixfile do
 
   defp deps do
     [
+      {:membrane_vk_video_plugin, "~> 0.2.0", optional: true},
       {:membrane_core, "~> 1.2 and >= 1.2.1"},
       {:membrane_opus_plugin, "~> 0.20.3"},
       {:membrane_aac_plugin, "~> 0.19.0"},
