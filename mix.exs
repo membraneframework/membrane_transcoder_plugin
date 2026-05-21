@@ -39,6 +39,7 @@ defmodule Membrane.Transcoder.Plugin.Mixfile do
     [
       {:membrane_vk_video_plugin, "~> 0.2.0", optional: true},
       {:membrane_core, "~> 1.2 and >= 1.2.1"},
+      {:membrane_tee_plugin, "~> 0.12.0"},
       {:membrane_opus_plugin, "~> 0.20.3"},
       {:membrane_aac_plugin, "~> 0.19.0"},
       {:membrane_aac_fdk_plugin, "~> 0.18.0"},

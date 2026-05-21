@@ -29,15 +29,26 @@ defmodule Membrane.Transcoder do
 
   When the `membrane_vk_video_plugin` dependency is present and Vulkan hardware is available,
   H.264 encode/decode can be offloaded to the GPU by setting `native_acceleration: :if_available`.
+
+  ## Usage
+
+      child(:transcoder, Membrane.Transcoder),
+      get_child(:transcoder)
+      |> via_out(Pad.ref(:output, 0), options: [output_stream_format: H264, width: 1280, height: 720])
+      |> child(:hd_sink, Membrane.File.Sink),
+      get_child(:transcoder)
+      |> via_out(Pad.ref(:output, 1), options: [output_stream_format: H264, width: 640, height: 360])
+      |> child(:sd_sink, Membrane.File.Sink)
   """
   use Membrane.Bin
 
   require __MODULE__.Audio
   require __MODULE__.Video
   require Membrane.Logger
+  require Membrane.Pad
 
   alias __MODULE__.{Audio, Video}
-  alias Membrane.{AAC, Funnel, H264, H265, Opus, RawAudio, RawVideo, RemoteStream, VP8, VP9}
+  alias Membrane.{AAC, Funnel, H264, H265, Opus, Pad, RawAudio, RawVideo, RemoteStream, VP8, VP9}
 
   @typedoc """
   Describes stream formats acceptable on the bin's input and output.
@@ -82,22 +93,60 @@ defmodule Membrane.Transcoder do
              format.__struct__ == RemoteStream
 
   def_output_pad :output,
-    accepted_format: format when Audio.is_audio_format(format) or Video.is_video_format(format)
+    availability: :on_request,
+    accepted_format: format when Audio.is_audio_format(format) or Video.is_video_format(format),
+    options: [
+      output_stream_format: [
+        spec:
+          stream_format()
+          | stream_format_module()
+          | stream_format_tuple()
+          | stream_format_resolver()
+          | nil,
+        default: nil,
+        description: """
+        Per-output stream format. Inherits from bin's `output_stream_format` option if nil.
+        """
+      ],
+      transcoding_policy: [
+        spec:
+          :always
+          | :if_needed
+          | :never
+          | (stream_format() -> :always | :if_needed | :never)
+          | nil,
+        default: nil,
+        description: """
+        Per-output transcoding policy. Inherits from bin's `transcoding_policy` option if nil.
+        """
+      ],
+      native_acceleration: [
+        spec: :never | :if_available | nil,
+        default: nil,
+        description: """
+        Per-output native acceleration setting. Inherits from bin's `native_acceleration` option if nil.
+        """
+      ]
+    ]
 
   def_options output_stream_format: [
                 spec:
                   stream_format()
                   | stream_format_module()
                   | stream_format_tuple()
-                  | stream_format_resolver(),
+                  | stream_format_resolver()
+                  | nil,
+                default: nil,
                 description: """
-                An option specifying desired output format.
+                An option specifying the desired output format for all outputs.
 
                 Can be either:
                 * a struct being a Membrane stream format,
                 * a module in which Membrane stream format struct is defined,
                 * a function which receives input stream format as an input argument
                 and is supposed to return the desired output stream format or its module.
+
+                When using per-output `via_out` options, individual outputs can override this value.
                 """
               ],
               transcoding_policy: [
@@ -157,20 +206,17 @@ defmodule Membrane.Transcoder do
 
   @impl true
   def handle_init(_ctx, opts) do
-    spec = [
+    spec =
       bin_input()
       |> maybe_plug_stream_format_changer(opts.assumed_input_stream_format)
-      |> child(:connector, %Membrane.Connector{notify_on_stream_format?: true}),
-      child(:output_funnel, Funnel)
-      |> bin_output()
-    ]
+      |> child(:connector, %Membrane.Connector{notify_on_stream_format?: true})
 
     state =
       opts
       |> Map.from_struct()
       |> Map.merge(%{
         input_stream_format: nil,
-        use_hardware_acceleration?: should_use_hardware_acceleration?(opts.native_acceleration)
+        output_specs: %{}
       })
 
     {[spec: spec], state}
@@ -204,28 +250,89 @@ defmodule Membrane.Transcoder do
   end
 
   @impl true
+  def handle_pad_added(Pad.ref(:output, pad_id) = pad_ref, ctx, state) do
+    pad_opts = ctx.pads[pad_ref].options
+
+    suffix = pad_id_to_suffix(pad_id)
+    funnel_name = :"funnel_#{suffix}"
+
+    output_spec = %{
+      output_stream_format: pad_opts.output_stream_format || state.output_stream_format,
+      transcoding_policy: pad_opts.transcoding_policy || state.transcoding_policy,
+      native_acceleration: pad_opts.native_acceleration || state.native_acceleration,
+      funnel_name: funnel_name,
+      suffix: suffix,
+      pad_id: pad_id
+    }
+
+    spec = child(funnel_name, Funnel) |> bin_output(pad_ref)
+
+    {[spec: spec], %{state | output_specs: Map.put(state.output_specs, pad_ref, output_spec)}}
+  end
+
+  @impl true
+  def handle_pad_removed(Pad.ref(:output, _id) = pad_ref, _ctx, state) do
+    {[], %{state | output_specs: Map.delete(state.output_specs, pad_ref)}}
+  end
+
+  @impl true
   def handle_child_notification({:stream_format, _pad, format}, :connector, _ctx, state)
       when state.input_stream_format == nil do
-    state =
-      %{state | input_stream_format: format}
-      |> resolve_output_stream_format()
+    state = %{state | input_stream_format: format}
 
-    state =
-      with %{transcoding_policy: f} when is_function(f) <- state do
-        %{state | transcoding_policy: f.(format)}
+    output_specs_list = Map.to_list(state.output_specs)
+    single_output? = length(output_specs_list) == 1
+
+    specs =
+      if single_output? do
+        [{_pad_ref, output_spec}] = output_specs_list
+        use_hw? = should_use_hardware_acceleration?(output_spec.native_acceleration)
+        resolved_format = resolve_output_stream_format(output_spec.output_stream_format, format)
+
+        transcoding_policy = resolve_transcoding_policy(output_spec.transcoding_policy, format)
+
+        [
+          get_child(:connector)
+          |> plug_transcoding(
+            format,
+            resolved_format,
+            transcoding_policy,
+            use_hw?,
+            output_spec.suffix
+          )
+          |> get_child(output_spec.funnel_name)
+        ]
+      else
+        # Build tee and all output pipelines in a single spec so the tee
+        # is never in a state where data flows through it without outputs connected.
+        tee_spec = get_child(:connector) |> child(:tee, Membrane.Tee.Parallel)
+
+        output_pipeline_specs =
+          Enum.map(output_specs_list, fn {_pad_ref, output_spec} ->
+            use_hw? = should_use_hardware_acceleration?(output_spec.native_acceleration)
+
+            resolved_format =
+              resolve_output_stream_format(output_spec.output_stream_format, format)
+
+            transcoding_policy =
+              resolve_transcoding_policy(output_spec.transcoding_policy, format)
+
+            get_child(:tee)
+            |> via_out(Pad.ref(:output, output_spec.pad_id))
+            |> plug_transcoding(
+              format,
+              resolved_format,
+              transcoding_policy,
+              use_hw?,
+              output_spec.suffix
+            )
+            |> get_child(output_spec.funnel_name)
+          end)
+
+        [tee_spec | output_pipeline_specs]
       end
 
-    spec =
-      get_child(:connector)
-      |> plug_transcoding(
-        format,
-        state.output_stream_format,
-        state.transcoding_policy,
-        state.use_hardware_acceleration?
-      )
-      |> get_child(:output_funnel)
-
-    {[spec: spec], state}
+    {[spec: specs], state}
   end
 
   @impl true
@@ -249,20 +356,24 @@ defmodule Membrane.Transcoder do
     {[], state}
   end
 
-  defp resolve_output_stream_format(state) do
-    case state.output_stream_format do
+  defp resolve_transcoding_policy(f, format) when is_function(f), do: f.(format)
+  defp resolve_transcoding_policy(policy, _format), do: policy
+
+  defp resolve_output_stream_format(nil, input_format), do: input_format
+
+  defp resolve_output_stream_format(output_stream_format, input_format) do
+    case output_stream_format do
       format when is_struct(format) ->
-        state
+        format
 
       module when is_atom(module) ->
-        %{state | output_stream_format: struct(module)}
+        struct(module)
 
       {module, opts} when is_atom(module) and is_list(opts) ->
-        %{state | output_stream_format: struct(module, opts)}
+        struct(module, opts)
 
       resolver when is_function(resolver) ->
-        %{state | output_stream_format: resolver.(state.input_stream_format)}
-        |> resolve_output_stream_format()
+        resolve_output_stream_format(resolver.(input_format), input_format)
     end
   end
 
@@ -271,11 +382,12 @@ defmodule Membrane.Transcoder do
          input_format,
          output_format,
          transcoding_policy,
-         _use_hardware_acceleration?
+         _use_hardware_acceleration?,
+         suffix
        )
        when Audio.is_audio_format(input_format) do
     builder
-    |> Audio.plug_audio_transcoding(input_format, output_format, transcoding_policy)
+    |> Audio.plug_audio_transcoding(input_format, output_format, transcoding_policy, suffix)
   end
 
   defp plug_transcoding(
@@ -283,7 +395,8 @@ defmodule Membrane.Transcoder do
          input_format,
          output_format,
          transcoding_policy,
-         use_hardware_acceleration?
+         use_hardware_acceleration?,
+         suffix
        )
        when Video.is_video_format(input_format) do
     builder
@@ -291,7 +404,12 @@ defmodule Membrane.Transcoder do
       input_format,
       output_format,
       transcoding_policy,
-      use_hardware_acceleration?
+      use_hardware_acceleration?,
+      suffix
     )
   end
+
+  defp pad_id_to_suffix(id) when is_integer(id), do: "output_#{id}"
+  defp pad_id_to_suffix(id) when is_atom(id), do: "output_#{id}"
+  defp pad_id_to_suffix(id), do: "output_#{:erlang.phash2(id)}"
 end
