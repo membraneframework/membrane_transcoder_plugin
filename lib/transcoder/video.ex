@@ -376,7 +376,7 @@ defmodule Membrane.Transcoder.Video do
     end
   end
 
-  defp cpu_count do
+  defp cpu_count() do
     cpu_quota = :erlang.system_info(:cpu_quota)
 
     if cpu_quota != :unknown do
@@ -385,7 +385,7 @@ defmodule Membrane.Transcoder.Video do
       try do
         :erlang.system_info(:logical_processors_online)
       rescue
-        _ -> :erlang.system_info(:logical_processors_available)
+        _cpu_quota -> :erlang.system_info(:logical_processors_available)
       end
     end
   end
