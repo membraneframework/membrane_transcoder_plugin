@@ -89,23 +89,24 @@ defmodule Membrane.Transcoder.IntegrationTest do
 
   Enum.map(@vk_video_cases, fn test_case ->
     @tag :vulkan
-    test "transcoder produces stable output for #{inspect(test_case.input_format)} -> H264 with native acceleration" do
+    @tag :tmp_dir
+    test "transcoder produces stable output for #{inspect(test_case.input_format)} -> H264 with native acceleration",
+         %{tmp_dir: tmp_dir} do
       fixture_path =
         Path.join(
           @vk_fixtures_dir,
           "#{unquote(test_case.input_format) |> Module.split() |> List.last() |> String.downcase()}_to_h264.h264"
         )
 
-      actual = run_transcoder_to_file(unquote(Macro.escape(test_case)), :if_available)
+      actual = run_transcoder_to_file(unquote(Macro.escape(test_case)), :if_available, tmp_dir)
 
       assert byte_size(actual) > 0, "transcoder produced empty output"
       assert_or_regenerate_fixture!(actual, fixture_path)
     end
   end)
 
-  defp run_transcoder_to_file(test_case, native_acceleration) do
-    tmp_path =
-      Path.join(System.tmp_dir!(), "vk_transcoder_#{:erlang.unique_integer([:positive])}")
+  defp run_transcoder_to_file(test_case, native_acceleration, tmp_dir) do
+    tmp_path = tmp_path(tmp_dir, "vk_transcoder")
 
     pid = Testing.Pipeline.start_link_supervised!()
 
@@ -130,8 +131,8 @@ defmodule Membrane.Transcoder.IntegrationTest do
     bytes
   end
 
-  defp transcode_to_bytes(input_file, preprocess, output_format) do
-    tmp_path = Path.join(System.tmp_dir!(), "ref_#{:erlang.unique_integer([:positive])}")
+  defp transcode_to_bytes(input_file, preprocess, output_format, tmp_dir) do
+    tmp_path = tmp_path(tmp_dir, "ref")
     pid = Testing.Pipeline.start_link_supervised!()
 
     spec =
@@ -148,6 +149,10 @@ defmodule Membrane.Transcoder.IntegrationTest do
     bytes = File.read!(tmp_path)
     File.rm(tmp_path)
     bytes
+  end
+
+  defp tmp_path(tmp_dir, prefix) do
+    Path.join(tmp_dir, "#{prefix}_#{:erlang.unique_integer([:positive])}")
   end
 
   defp assert_or_regenerate_fixture!(actual, fixture_path) do
@@ -291,14 +296,19 @@ defmodule Membrane.Transcoder.IntegrationTest do
     Testing.Pipeline.terminate(pid)
   end
 
-  test "multivariant output: two outputs with different formats from H264 input" do
-    ref_h264 = transcode_to_bytes("./test/fixtures/video.h264", &Preprocessors.parse_h264/1, H264)
-    ref_h265 = transcode_to_bytes("./test/fixtures/video.h264", &Preprocessors.parse_h264/1, H265)
+  @tag :tmp_dir
+  test "multivariant output: two outputs with different formats from H264 input", %{
+    tmp_dir: tmp_dir
+  } do
+    ref_h264 =
+      transcode_to_bytes("./test/fixtures/video.h264", &Preprocessors.parse_h264/1, H264, tmp_dir)
+
+    ref_h265 =
+      transcode_to_bytes("./test/fixtures/video.h264", &Preprocessors.parse_h264/1, H265, tmp_dir)
 
     pid = Testing.Pipeline.start_link_supervised!()
-    tmp = fn -> Path.join(System.tmp_dir!(), "mv_#{:erlang.unique_integer([:positive])}") end
-    h264_tmp = tmp.()
-    h265_tmp = tmp.()
+    h264_tmp = tmp_path(tmp_dir, "mv")
+    h265_tmp = tmp_path(tmp_dir, "mv")
 
     spec = [
       child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
@@ -326,14 +336,17 @@ defmodule Membrane.Transcoder.IntegrationTest do
     assert mv_h265 == ref_h265
   end
 
-  test "multivariant output: two video outputs with different resolutions" do
-    ref_h264 = transcode_to_bytes("./test/fixtures/video.h264", &Preprocessors.parse_h264/1, H264)
-    ref_vp8 = transcode_to_bytes("./test/fixtures/video.h264", &Preprocessors.parse_h264/1, VP8)
+  @tag :tmp_dir
+  test "multivariant output: two video outputs with different resolutions", %{tmp_dir: tmp_dir} do
+    ref_h264 =
+      transcode_to_bytes("./test/fixtures/video.h264", &Preprocessors.parse_h264/1, H264, tmp_dir)
+
+    ref_vp8 =
+      transcode_to_bytes("./test/fixtures/video.h264", &Preprocessors.parse_h264/1, VP8, tmp_dir)
 
     pid = Testing.Pipeline.start_link_supervised!()
-    tmp = fn -> Path.join(System.tmp_dir!(), "mv_#{:erlang.unique_integer([:positive])}") end
-    h264_tmp = tmp.()
-    vp8_tmp = tmp.()
+    h264_tmp = tmp_path(tmp_dir, "mv")
+    vp8_tmp = tmp_path(tmp_dir, "mv")
 
     spec = [
       child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
@@ -406,18 +419,26 @@ defmodule Membrane.Transcoder.IntegrationTest do
     Testing.Pipeline.terminate(pid)
   end
 
-  test "multivariant output: three audio outputs with different formats" do
-    ref_aac = transcode_to_bytes("./test/fixtures/audio.aac", &Preprocessors.parse_aac/1, AAC)
-    ref_opus = transcode_to_bytes("./test/fixtures/audio.aac", &Preprocessors.parse_aac/1, Opus)
+  @tag :tmp_dir
+  test "multivariant output: three audio outputs with different formats", %{tmp_dir: tmp_dir} do
+    ref_aac =
+      transcode_to_bytes("./test/fixtures/audio.aac", &Preprocessors.parse_aac/1, AAC, tmp_dir)
+
+    ref_opus =
+      transcode_to_bytes("./test/fixtures/audio.aac", &Preprocessors.parse_aac/1, Opus, tmp_dir)
 
     ref_mp3 =
-      transcode_to_bytes("./test/fixtures/audio.aac", &Preprocessors.parse_aac/1, MPEGAudio)
+      transcode_to_bytes(
+        "./test/fixtures/audio.aac",
+        &Preprocessors.parse_aac/1,
+        MPEGAudio,
+        tmp_dir
+      )
 
     pid = Testing.Pipeline.start_link_supervised!()
-    tmp = fn -> Path.join(System.tmp_dir!(), "mv_#{:erlang.unique_integer([:positive])}") end
-    aac_tmp = tmp.()
-    opus_tmp = tmp.()
-    mp3_tmp = tmp.()
+    aac_tmp = tmp_path(tmp_dir, "mv")
+    opus_tmp = tmp_path(tmp_dir, "mv")
+    mp3_tmp = tmp_path(tmp_dir, "mv")
 
     spec = [
       child(%Membrane.File.Source{location: "./test/fixtures/audio.aac"})
