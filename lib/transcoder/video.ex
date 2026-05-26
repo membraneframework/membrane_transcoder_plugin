@@ -351,31 +351,17 @@ defmodule Membrane.Transcoder.Video do
   end
 
   defp maybe_plug_encoder_and_parser(builder, %VP8{}, suffix) do
-    cpu_quota = :erlang.system_info(:cpu_quota)
-
-    number_of_threads =
-      if cpu_quota != :unknown,
-        do: cpu_quota,
-        else: :erlang.system_info(:logical_processors_available)
-
     builder
     |> child(child_name(suffix, :vp8_encoder), %VP8.Encoder{
-      g_threads: number_of_threads,
+      g_threads: cpu_count(),
       cpu_used: 15
     })
   end
 
   defp maybe_plug_encoder_and_parser(builder, %VP9{}, suffix) do
-    cpu_quota = :erlang.system_info(:cpu_quota)
-
-    number_of_threads =
-      if cpu_quota != :unknown,
-        do: cpu_quota,
-        else: :erlang.system_info(:logical_processors_available)
-
     builder
-    |> child(child_name(suffix, :vp8_encoder), %VP9.Encoder{
-      g_threads: number_of_threads,
+    |> child(child_name(suffix, :vp9_encoder), %VP9.Encoder{
+      g_threads: cpu_count(),
       cpu_used: 15
     })
   end
@@ -387,6 +373,20 @@ defmodule Membrane.Transcoder.Video do
     case stream_structure do
       type when type in [:annexb, :avc1, :avc3, :hvc1, :hev1] -> type
       {type, _dcr} when type in [:avc1, :avc3, :hvc1, :hev1] -> type
+    end
+  end
+
+  defp cpu_count do
+    cpu_quota = :erlang.system_info(:cpu_quota)
+
+    if cpu_quota != :unknown do
+      cpu_quota
+    else
+      try do
+        :erlang.system_info(:logical_processors_online)
+      rescue
+        _ -> :erlang.system_info(:logical_processors_available)
+      end
     end
   end
 
