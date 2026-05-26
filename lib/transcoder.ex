@@ -34,11 +34,11 @@ defmodule Membrane.Transcoder do
 
       child(:transcoder, Membrane.Transcoder),
       get_child(:transcoder)
-      |> via_out(Pad.ref(:output, 0), options: [output_stream_format: H264, width: 1280, height: 720])
-      |> child(:hd_sink, Membrane.File.Sink),
+      |> via_out(Pad.ref(:output, 0), options: [output_stream_format: H264, transcoding_policy: :if_needed])
+      |> child(:h264_sink, Membrane.File.Sink),
       get_child(:transcoder)
-      |> via_out(Pad.ref(:output, 1), options: [output_stream_format: H264, width: 640, height: 360])
-      |> child(:sd_sink, Membrane.File.Sink)
+      |> via_out(Pad.ref(:output, 1), options: [output_stream_format: H265, transcoding_policy: :always])
+      |> child(:h265_sink, Membrane.File.Sink)
   """
   use Membrane.Bin
 

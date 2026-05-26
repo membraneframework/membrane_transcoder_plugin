@@ -20,6 +20,7 @@ Mix.install(
 defmodule Example do
   alias Membrane.{H264, RCPipeline}
   require RCPipeline
+  require Membrane.Pad
 
   import Membrane.ChildrenSpec
 
@@ -27,15 +28,21 @@ defmodule Example do
     pipeline = RCPipeline.start_link!()
 
     spec =
-      child(%Membrane.File.Source{
-        location: input_file
-      })
-      |> child(:deserializer, Membrane.IVF.Deserializer)
-      |> child(:transcoder, %Membrane.Transcoder{
-        output_stream_format: H264,
-        native_acceleration: native_acceleration
-      })
-      |> child(:sink, %Membrane.File.Sink{location: output_file})
+      [
+        child(%Membrane.File.Source{
+          location: input_file
+        })
+        |> child(:deserializer, Membrane.IVF.Deserializer)
+        |> child(:transcoder, Membrane.Transcoder),
+        get_child(:transcoder)
+        |> via_out(Membrane.Pad.ref(:output, 0),
+          options: [
+            output_stream_format: H264,
+            native_acceleration: native_acceleration
+          ]
+        )
+        |> child(:sink, %Membrane.File.Sink{location: output_file})
+      ]
 
     RCPipeline.subscribe(pipeline, _any)
     RCPipeline.exec_actions(pipeline, spec: spec)

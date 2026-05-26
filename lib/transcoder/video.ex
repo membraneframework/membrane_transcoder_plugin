@@ -391,5 +391,5 @@ defmodule Membrane.Transcoder.Video do
   end
 
   defp child_name(nil, base), do: base
-  defp child_name(suffix, base), do: :"#{suffix}_#{base}"
+  defp child_name(suffix, base), do: {suffix, base}
 end
