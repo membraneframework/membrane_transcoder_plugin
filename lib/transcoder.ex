@@ -253,8 +253,8 @@ defmodule Membrane.Transcoder do
   def handle_pad_added(Pad.ref(:output, pad_id) = pad_ref, ctx, state) do
     pad_opts = ctx.pads[pad_ref].options
 
-    suffix = pad_id_to_suffix(pad_id)
-    funnel_name = :"funnel_#{suffix}"
+    suffix = {pad_id, :output}
+    funnel_name = {pad_id, :output, :funnel}
 
     output_spec = %{
       output_stream_format: pad_opts.output_stream_format || state.output_stream_format,
@@ -408,8 +408,4 @@ defmodule Membrane.Transcoder do
       suffix
     )
   end
-
-  defp pad_id_to_suffix(id) when is_integer(id), do: "output_#{id}"
-  defp pad_id_to_suffix(id) when is_atom(id), do: "output_#{id}"
-  defp pad_id_to_suffix(id), do: "output_#{:erlang.phash2(id)}"
 end

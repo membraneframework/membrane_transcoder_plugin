@@ -138,8 +138,8 @@ defmodule Membrane.Transcoder.IntegrationTest do
     spec =
       child(%Membrane.File.Source{location: input_file})
       |> then(preprocess)
-      |> child(:transcoder, %Membrane.Transcoder{output_stream_format: output_format})
-      |> via_out(Membrane.Pad.ref(:output, 0))
+      |> child(:transcoder, Membrane.Transcoder)
+      |> via_out(Membrane.Pad.ref(:output, 0), options: [output_stream_format: output_format])
       |> child(:sink, %Membrane.File.Sink{location: tmp_path})
 
     Testing.Pipeline.execute_actions(pid, spec: spec)
@@ -225,7 +225,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
         get_child_result =
           Testing.Pipeline.get_child_pid(
             pipeline,
-            [:transcoder, {"output_0", base_name}]
+            [:transcoder, {{0, :output}, base_name}]
           )
 
         if transcoding_policy == :always do
@@ -282,16 +282,16 @@ defmodule Membrane.Transcoder.IntegrationTest do
     assert_sink_stream_format(pid, :sink, _format)
 
     assert {:ok, _pid} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {"output_0", :h264_decoder}])
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, {{0, :output}, :h264_decoder}])
 
     assert {:ok, _pid} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {"output_0", :h264_encoder}])
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, {{0, :output}, :h264_encoder}])
 
     assert {:error, :child_not_found} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {"output_0", :vk_h264_decoder}])
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, {{0, :output}, :vk_h264_decoder}])
 
     assert {:error, :child_not_found} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {"output_0", :vk_h264_encoder}])
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, {{0, :output}, :vk_h264_encoder}])
 
     Testing.Pipeline.terminate(pid)
   end
@@ -337,7 +337,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
   end
 
   @tag :tmp_dir
-  test "multivariant output: two video outputs with different resolutions", %{tmp_dir: tmp_dir} do
+  test "multivariant output: two video outputs with different codecs", %{tmp_dir: tmp_dir} do
     ref_h264 =
       transcode_to_bytes("./test/fixtures/video.h264", &Preprocessors.parse_h264/1, H264, tmp_dir)
 
@@ -404,17 +404,17 @@ defmodule Membrane.Transcoder.IntegrationTest do
 
     # :always output should have encoder/decoder with "output_0_" prefix
     assert {:ok, _pid} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {"output_0", :h264_decoder}])
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, {{0, :output}, :h264_decoder}])
 
     assert {:ok, _pid} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {"output_0", :h264_encoder}])
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, {{0, :output}, :h264_encoder}])
 
     # :if_needed output should NOT have encoder/decoder (same format type)
     assert {:error, :child_not_found} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {"output_1", :h264_decoder}])
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, {{1, :output}, :h264_decoder}])
 
     assert {:error, :child_not_found} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {"output_1", :h264_encoder}])
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, {{1, :output}, :h264_encoder}])
 
     Testing.Pipeline.terminate(pid)
   end
