@@ -34,6 +34,9 @@ Then you can inspect the format of the output file with e.g. `ffprobe` and confi
 ```
 ffprobe tmp/video.ivf
 ```
+
+For an example of a transcoder with multiple outputs, see `examples/multivariant_output.exs`
+
 ## Copyright and License
 
 Copyright 2020, [Software Mansion](https://swmansion.com/?utm_source=git&utm_medium=readme&utm_campaign=membrane_transcoder_plugin)
