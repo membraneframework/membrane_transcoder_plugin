@@ -254,7 +254,7 @@ defmodule Membrane.Transcoder do
     pad_opts = ctx.pads[pad_ref].options
 
     suffix = {pad_id, :output}
-    funnel_name = {pad_id, :output, :funnel}
+    funnel_name = {:funnel, suffix}
 
     output_spec = %{
       output_stream_format: pad_opts.output_stream_format || state.output_stream_format,

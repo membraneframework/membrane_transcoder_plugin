@@ -225,7 +225,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
         get_child_result =
           Testing.Pipeline.get_child_pid(
             pipeline,
-            [:transcoder, {{0, :output}, base_name}]
+            [:transcoder, {base_name, {0, :output}}]
           )
 
         if transcoding_policy == :always do
@@ -282,16 +282,16 @@ defmodule Membrane.Transcoder.IntegrationTest do
     assert_sink_stream_format(pid, :sink, _format)
 
     assert {:ok, _pid} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {{0, :output}, :h264_decoder}])
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, {:h264_decoder, {0, :output}}])
 
     assert {:ok, _pid} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {{0, :output}, :h264_encoder}])
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, {:h264_encoder, {0, :output}}])
 
     assert {:error, :child_not_found} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {{0, :output}, :vk_h264_decoder}])
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, {:vk_h264_decoder, {0, :output}}])
 
     assert {:error, :child_not_found} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {{0, :output}, :vk_h264_encoder}])
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, {:vk_h264_encoder, {0, :output}}])
 
     Testing.Pipeline.terminate(pid)
   end
@@ -404,17 +404,17 @@ defmodule Membrane.Transcoder.IntegrationTest do
 
     # :always output should have encoder/decoder with "output_0_" prefix
     assert {:ok, _pid} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {{0, :output}, :h264_decoder}])
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, {:h264_decoder, {0, :output}}])
 
     assert {:ok, _pid} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {{0, :output}, :h264_encoder}])
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, {:h264_encoder, {0, :output}}])
 
     # :if_needed output should NOT have encoder/decoder (same format type)
     assert {:error, :child_not_found} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {{1, :output}, :h264_decoder}])
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, {:h264_decoder, {1, :output}}])
 
     assert {:error, :child_not_found} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {{1, :output}, :h264_encoder}])
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, {:h264_encoder, {1, :output}}])
 
     Testing.Pipeline.terminate(pid)
   end
@@ -520,16 +520,16 @@ defmodule Membrane.Transcoder.IntegrationTest do
     assert_sink_stream_format(pid, :sink, _format)
 
     assert {:ok, _pid} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {"output_0", :vk_h264_decoder}])
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, {:vk_h264_decoder, "output_0"}])
 
     assert {:ok, _pid} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {"output_0", :vk_h264_encoder}])
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, {:vk_h264_encoder, "output_0"}])
 
     assert {:error, :child_not_found} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {"output_0", :h264_decoder}])
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, {:h264_decoder, "output_0"}])
 
     assert {:error, :child_not_found} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {"output_0", :h264_encoder}])
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, {:h264_encoder, "output_0"}])
 
     Testing.Pipeline.terminate(pid)
   end
