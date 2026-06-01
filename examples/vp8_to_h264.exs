@@ -51,7 +51,7 @@ defmodule Example do
   end
 end
 
-File.mkdir_p!("tmp")
+File.mkdir_p!(Path.join(__DIR__, "tmp"))
 
 if use_native && !Membrane.Transcoder.vulkan_available?() do
   raise "Vulkan is not available. Cannot run with --native flag."

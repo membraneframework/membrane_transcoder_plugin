@@ -46,6 +46,59 @@ defmodule Membrane.Transcoder.IntegrationTest do
                       do: Map.put(input, :output_format, H264)
 
   @vk_fixtures_dir "./test/fixtures/vk_outputs"
+  @scaled_fixtures_dir "./test/fixtures/scaled_outputs"
+
+  # video.h264 is 320x180; scale tests use half resolution
+  @scale_sw_cases [
+    %{
+      input_format: H264,
+      input_file: "video.h264",
+      preprocess: &Preprocessors.parse_h264/1,
+      output_format: %H264{width: 160, height: 90},
+      label: "h264_to_h264",
+      ext: "h264",
+      resolution: "160x90"
+    },
+    %{
+      input_format: H264,
+      input_file: "video.h264",
+      preprocess: &Preprocessors.parse_h264/1,
+      output_format: {RawVideo, [width: 160, height: 90]},
+      label: "h264_to_rawvideo",
+      ext: "yuv",
+      resolution: "160x90"
+    },
+    %{
+      input_format: RawVideo,
+      input_file: "video.h264",
+      preprocess: &Preprocessors.decode_h264/1,
+      output_format: %H264{width: 160, height: 90},
+      label: "rawvideo_to_h264",
+      ext: "h264",
+      resolution: "160x90"
+    },
+    %{
+      input_format: RawVideo,
+      input_file: "video.h264",
+      preprocess: &Preprocessors.decode_h264/1,
+      output_format: {RawVideo, [width: 160, height: 90]},
+      label: "rawvideo_to_rawvideo",
+      ext: "yuv",
+      resolution: "160x90"
+    }
+  ]
+
+  @scale_vk_cases [
+    %{
+      input_format: H264,
+      input_file: "video.h264",
+      preprocess: &Preprocessors.parse_h264/1,
+      output_format: %H264{width: 160, height: 90},
+      label: "h264_to_h264",
+      ext: "h264",
+      resolution: "160x90"
+    }
+  ]
 
   @test_cases @video_cases ++ @audio_cases
 
@@ -105,6 +158,26 @@ defmodule Membrane.Transcoder.IntegrationTest do
       assert_or_regenerate_fixture!(actual, fixture_path)
     end
   end)
+
+  defp assert_or_regenerate_scaled_fixture!(actual, fixture_path) do
+    if System.get_env("REGEN_SCALED_FIXTURES") == "1" do
+      File.mkdir_p!(Path.dirname(fixture_path))
+      File.write!(fixture_path, actual)
+      IO.puts("Regenerated fixture: #{fixture_path}")
+    else
+      case File.read(fixture_path) do
+        {:ok, expected} ->
+          assert actual == expected,
+                 "output does not match fixture #{fixture_path}"
+
+        {:error, :enoent} ->
+          flunk("""
+          Missing fixture #{fixture_path}.
+          Run `REGEN_SCALED_FIXTURES=1 mix test` to generate it, then commit the resulting file.
+          """)
+      end
+    end
+  end
 
   defp run_transcoder_to_file(test_case, native_acceleration, tmp_dir) do
     tmp_path = tmp_path(tmp_dir, "vk_transcoder")
@@ -528,6 +601,128 @@ defmodule Membrane.Transcoder.IntegrationTest do
 
     assert_sink_stream_format(pid, :sink_override, format_override, 10_000)
     assert format_override.__struct__ == H265
+
+    Testing.Pipeline.terminate(pid)
+  end
+
+  Enum.map(@scale_sw_cases, fn test_case ->
+    @tag :tmp_dir
+    test "scales #{test_case.label} to 160x90 (software)", %{tmp_dir: tmp_dir} do
+      fixture_path =
+        Path.join(
+          @scaled_fixtures_dir,
+          "sw_#{unquote(test_case.label)}_#{unquote(test_case.resolution)}.#{unquote(test_case.ext)}"
+        )
+
+      actual = run_transcoder_to_file(unquote(Macro.escape(test_case)), :never, tmp_dir)
+
+      assert byte_size(actual) > 0, "transcoder produced empty output"
+      assert_or_regenerate_scaled_fixture!(actual, fixture_path)
+    end
+  end)
+
+  Enum.map(@scale_vk_cases, fn test_case ->
+    @tag :vulkan
+    @tag :tmp_dir
+    test "scales #{test_case.label} to 160x90 (vulkan)", %{tmp_dir: tmp_dir} do
+      fixture_path =
+        Path.join(
+          @scaled_fixtures_dir,
+          "vk_#{unquote(test_case.label)}_#{unquote(test_case.resolution)}.#{unquote(test_case.ext)}"
+        )
+
+      actual = run_transcoder_to_file(unquote(Macro.escape(test_case)), :if_available, tmp_dir)
+
+      assert byte_size(actual) > 0, "transcoder produced empty output"
+      assert_or_regenerate_scaled_fixture!(actual, fixture_path)
+    end
+  end)
+
+  test "output format width/height drives RawVideo output dimensions" do
+    pid = Testing.Pipeline.start_link_supervised!()
+
+    spec =
+      child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
+      |> then(&Preprocessors.parse_h264/1)
+      |> child(:transcoder, %Membrane.Transcoder{
+        output_stream_format: {RawVideo, [width: 160, height: 90]}
+      })
+      |> via_out(Membrane.Pad.ref(:output, 0))
+      |> child(:sink, Testing.Sink)
+
+    Testing.Pipeline.execute_actions(pid, spec: spec)
+
+    assert_sink_stream_format(pid, :sink, %RawVideo{width: 160, height: 90}, 10_000)
+
+    Testing.Pipeline.terminate(pid)
+  end
+
+  test "per-output format with resolution overrides bin-level format" do
+    pid = Testing.Pipeline.start_link_supervised!()
+
+    spec = [
+      child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
+      |> then(&Preprocessors.parse_h264/1)
+      |> child(:transcoder, %Membrane.Transcoder{
+        output_stream_format: {RawVideo, [width: 320, height: 180]}
+      }),
+      get_child(:transcoder)
+      |> via_out(Membrane.Pad.ref(:output, 0))
+      |> child(:sink_default, Testing.Sink),
+      get_child(:transcoder)
+      |> via_out(Membrane.Pad.ref(:output, 1),
+        options: [output_stream_format: {RawVideo, [width: 160, height: 90]}]
+      )
+      |> child(:sink_scaled, Testing.Sink)
+    ]
+
+    Testing.Pipeline.execute_actions(pid, spec: spec)
+
+    assert_sink_stream_format(pid, :sink_default, %RawVideo{width: 320, height: 180}, 10_000)
+    assert_sink_stream_format(pid, :sink_scaled, %RawVideo{width: 160, height: 90}, 10_000)
+
+    Testing.Pipeline.terminate(pid)
+  end
+
+  test "resolution pad option scales video independently of output_stream_format" do
+    pid = Testing.Pipeline.start_link_supervised!()
+
+    spec = [
+      child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
+      |> then(&Preprocessors.parse_h264/1)
+      |> child(:transcoder, %Membrane.Transcoder{output_stream_format: RawVideo}),
+      get_child(:transcoder)
+      |> via_out(Membrane.Pad.ref(:output, 0))
+      |> child(:sink_default, Testing.Sink),
+      get_child(:transcoder)
+      |> via_out(Membrane.Pad.ref(:output, 1), options: [resolution: {160, 90}])
+      |> child(:sink_scaled, Testing.Sink)
+    ]
+
+    Testing.Pipeline.execute_actions(pid, spec: spec)
+
+    assert_sink_stream_format(pid, :sink_default, %RawVideo{width: 320, height: 180}, 10_000)
+    assert_sink_stream_format(pid, :sink_scaled, %RawVideo{width: 160, height: 90}, 10_000)
+
+    Testing.Pipeline.terminate(pid)
+  end
+
+  test "bin-level resolution applies to all outputs without per-pad override" do
+    pid = Testing.Pipeline.start_link_supervised!()
+
+    spec =
+      child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
+      |> then(&Preprocessors.parse_h264/1)
+      |> child(:transcoder, %Membrane.Transcoder{
+        output_stream_format: RawVideo,
+        resolution: {160, 90}
+      })
+      |> via_out(Membrane.Pad.ref(:output, 0))
+      |> child(:sink, Testing.Sink)
+
+    Testing.Pipeline.execute_actions(pid, spec: spec)
+
+    assert_sink_stream_format(pid, :sink, %RawVideo{width: 160, height: 90}, 10_000)
 
     Testing.Pipeline.terminate(pid)
   end

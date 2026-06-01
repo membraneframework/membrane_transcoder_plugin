@@ -142,6 +142,14 @@ defmodule Membrane.Transcoder do
         description: """
         Per-output bitrate setting for video streams. Inherits from bin's `bitrate` option if nil.
         """
+      ],
+      resolution: [
+        spec: {pos_integer(), pos_integer()} | nil,
+        default: nil,
+        description: """
+        Per-output video resolution `{width, height}`. Overrides `width` and `height` on the resolved
+        output stream format. Inherits from bin's `resolution` option if nil.
+        """
       ]
     ]
 
@@ -235,6 +243,16 @@ defmodule Membrane.Transcoder do
                 * H265 (libx265): CRF 28, preset :medium
                 * VP8/VP9 (libvpx): VBR mode with auto target bitrate
                 """
+              ],
+              resolution: [
+                spec: {pos_integer(), pos_integer()} | nil,
+                default: nil,
+                description: """
+                Desired output video resolution `{width, height}` applied to all outputs.
+
+                When set, overrides `width` and `height` on the resolved output stream format.
+                Individual outputs can override this via the per-output `resolution` pad option.
+                """
               ]
 
   @impl true
@@ -294,6 +312,7 @@ defmodule Membrane.Transcoder do
       transcoding_policy: pad_opts.transcoding_policy || state.transcoding_policy,
       native_acceleration: pad_opts.native_acceleration || state.native_acceleration,
       bitrate: pad_opts.bitrate || state.bitrate,
+      resolution: pad_opts.resolution || state.resolution,
       funnel_name: funnel_name,
       suffix: suffix,
       pad_id: pad_id
@@ -321,7 +340,11 @@ defmodule Membrane.Transcoder do
       if single_output? do
         [{_pad_ref, output_spec}] = output_specs_list
         use_hw? = should_use_hardware_acceleration?(output_spec.native_acceleration)
-        resolved_format = resolve_output_stream_format(output_spec.output_stream_format, format)
+
+        resolved_format =
+          output_spec.output_stream_format
+          |> resolve_output_stream_format(format)
+          |> apply_resolution(output_spec.resolution)
 
         transcoding_policy = resolve_transcoding_policy(output_spec.transcoding_policy, format)
 
@@ -346,7 +369,9 @@ defmodule Membrane.Transcoder do
             use_hw? = should_use_hardware_acceleration?(output_spec.native_acceleration)
 
             resolved_format =
-              resolve_output_stream_format(output_spec.output_stream_format, format)
+              output_spec.output_stream_format
+              |> resolve_output_stream_format(format)
+              |> apply_resolution(output_spec.resolution)
 
             transcoding_policy =
               resolve_transcoding_policy(output_spec.transcoding_policy, format)
@@ -393,7 +418,19 @@ defmodule Membrane.Transcoder do
   defp resolve_transcoding_policy(f, format) when is_function(f), do: f.(format)
   defp resolve_transcoding_policy(policy, _format), do: policy
 
-  defp resolve_output_stream_format(nil, input_format), do: input_format
+  defp apply_resolution(%{width: _width, height: _height} = format, {width, height}),
+    do: %{format | width: width, height: height}
+
+  defp apply_resolution(format, nil), do: format
+
+  defp apply_resolution(format, {_width, _height}), do: format
+
+  defp resolve_output_stream_format(nil, input_format) do
+    case input_format do
+      %{width: _width, height: _height} -> %{input_format | width: nil, height: nil}
+      _input_format -> input_format
+    end
+  end
 
   defp resolve_output_stream_format(output_stream_format, input_format) do
     case output_stream_format do
