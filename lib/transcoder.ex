@@ -95,6 +95,11 @@ defmodule Membrane.Transcoder do
           | Membrane.Transcoder.Video.VariableBitrate.t()
           | nil
 
+  @typedoc """
+  Describes video resolution as a tuple of width and height in pixels.
+  """
+  @type resolution :: {pos_integer(), pos_integer()} | nil
+
   def_input_pad :input,
     accepted_format:
       format
@@ -144,7 +149,7 @@ defmodule Membrane.Transcoder do
         """
       ],
       resolution: [
-        spec: {pos_integer(), pos_integer()} | nil,
+        spec: resolution(),
         default: nil,
         description: """
         Per-output video resolution `{width, height}`. Overrides `width` and `height` on the resolved
@@ -245,7 +250,7 @@ defmodule Membrane.Transcoder do
                 """
               ],
               resolution: [
-                spec: {pos_integer(), pos_integer()} | nil,
+                spec: resolution(),
                 default: nil,
                 description: """
                 Desired output video resolution `{width, height}` applied to all outputs.
@@ -418,6 +423,7 @@ defmodule Membrane.Transcoder do
   defp resolve_transcoding_policy(f, format) when is_function(f), do: f.(format)
   defp resolve_transcoding_policy(policy, _format), do: policy
 
+  @spec apply_resolution(stream_format(), resolution()) :: stream_format()
   defp apply_resolution(%{width: _width, height: _height} = format, {width, height}),
     do: %{format | width: width, height: height}
 

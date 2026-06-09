@@ -32,7 +32,7 @@ defmodule Membrane.Transcoder.Video do
                   is_raw_video_format(format)
 
   # Input format natively produces/consumes NV12 in the VK pipeline (H264 via VK decoder, or raw NV12)
-  defguardp is_nv12_native(format)
+  defguardp is_vk_video_friendly_format(format)
             when is_struct(format, H264) or
                    (is_struct(format, RawVideo) and format.pixel_format == :NV12)
 
@@ -41,7 +41,7 @@ defmodule Membrane.Transcoder.Video do
             when out_pf == nil or (is_struct(input, RawVideo) and input.pixel_format == out_pf)
 
   # Input pixel format is compatible with H264/H265 FFmpeg encoder (I420 or I422), or input is already encoded
-  defguardp h26x_compatible_input(input)
+  defguardp is_x264_friendly_format(input)
             when is_struct(input, H264) or is_struct(input, H265) or
                    (is_struct(input, RawVideo) and input.pixel_format in [:I420, :I422])
 
@@ -318,7 +318,7 @@ defmodule Membrane.Transcoder.Video do
          %H264{width: nil, height: nil},
          _suffix
        )
-       when is_nv12_native(input_format),
+       when is_vk_video_friendly_format(input_format),
        do: builder
 
   defp maybe_plug_swscale_converter_vulkan(
@@ -369,7 +369,7 @@ defmodule Membrane.Transcoder.Video do
          %h26x{width: nil, height: nil},
          _suffix
        )
-       when h26x in [H264, H265] and h26x_compatible_input(input_format),
+       when h26x in [H264, H265] and is_x264_friendly_format(input_format),
        do: builder
 
   defp maybe_plug_swscale_converter(builder, _input_format, %h26x{} = output_format, suffix)

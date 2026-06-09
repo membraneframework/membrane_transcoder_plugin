@@ -160,7 +160,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
   end)
 
   defp assert_or_regenerate_scaled_fixture!(actual, fixture_path) do
-    if System.get_env("REGEN_SCALED_FIXTURES") == "1" do
+    if System.get_env("REGEN_VK_FIXTURES") == "1" do
       File.mkdir_p!(Path.dirname(fixture_path))
       File.write!(fixture_path, actual)
       IO.puts("Regenerated fixture: #{fixture_path}")
@@ -173,7 +173,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
         {:error, :enoent} ->
           flunk("""
           Missing fixture #{fixture_path}.
-          Run `REGEN_SCALED_FIXTURES=1 mix test` to generate it, then commit the resulting file.
+          Run `REGEN_VK_FIXTURES=1 mix test` to generate it, then commit the resulting file.
           """)
       end
     end
