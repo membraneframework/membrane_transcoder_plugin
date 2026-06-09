@@ -1,13 +1,14 @@
 defmodule Membrane.Transcoder.IntegrationTest do
   use ExUnit.Case
-  import Membrane.Testing.Assertions
   import Membrane.ChildrenSpec
+  import Membrane.Testing.Assertions
 
   require Membrane.Pad
 
   alias Membrane.{AAC, H264, H265, MPEGAudio, Opus, RawAudio, RawVideo, VP8, VP9}
   alias Membrane.Testing
   alias Membrane.Transcoder.Support.Preprocessors
+  alias Membrane.Transcoder.Video.{ConstantBitrate, VariableBitrate}
 
   @video_inputs [
     %{input_format: H264, input_file: "video.h264", preprocess: &Preprocessors.parse_h264/1},
@@ -140,6 +141,38 @@ defmodule Membrane.Transcoder.IntegrationTest do
       |> then(preprocess)
       |> child(:transcoder, Membrane.Transcoder)
       |> via_out(Membrane.Pad.ref(:output, 0), options: [output_stream_format: output_format])
+      |> child(:sink, %Membrane.File.Sink{location: tmp_path})
+
+    Testing.Pipeline.execute_actions(pid, spec: spec)
+    assert_end_of_stream(pid, :sink, :input, 30_000)
+    Testing.Pipeline.terminate(pid)
+
+    bytes = File.read!(tmp_path)
+    File.rm(tmp_path)
+    bytes
+  end
+
+  defp transcode_to_bytes_with_bitrate(
+         input_file,
+         preprocess,
+         output_format,
+         bitrate,
+         native_acceleration,
+         tmp_dir
+       ) do
+    tmp_path = tmp_path(tmp_dir, "bitrate")
+    pid = Testing.Pipeline.start_link_supervised!()
+
+    spec =
+      child(%Membrane.File.Source{location: input_file})
+      |> then(preprocess)
+      |> child(:transcoder, %Membrane.Transcoder{
+        output_stream_format: output_format,
+        transcoding_policy: :always,
+        native_acceleration: native_acceleration,
+        bitrate: bitrate
+      })
+      |> via_out(Membrane.Pad.ref(:output, 0))
       |> child(:sink, %Membrane.File.Sink{location: tmp_path})
 
     Testing.Pipeline.execute_actions(pid, spec: spec)
@@ -520,17 +553,143 @@ defmodule Membrane.Transcoder.IntegrationTest do
     assert_sink_stream_format(pid, :sink, _format)
 
     assert {:ok, _pid} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {:vk_h264_decoder, "output_0"}])
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, {:vk_h264_decoder, {0, :output}}])
 
     assert {:ok, _pid} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {:vk_h264_encoder, "output_0"}])
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, {:vk_h264_encoder, {0, :output}}])
 
     assert {:error, :child_not_found} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {:h264_decoder, "output_0"}])
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, {:h264_decoder, {0, :output}}])
 
     assert {:error, :child_not_found} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {:h264_encoder, "output_0"}])
+             Testing.Pipeline.get_child_pid(pid, [:transcoder, {:h264_encoder, {0, :output}}])
 
     Testing.Pipeline.terminate(pid)
+  end
+
+  @tag :tmp_dir
+  test "bitrate conversion produces different output sizes", %{tmp_dir: tmp_dir} do
+    # Transcode the same input with different bitrates and verify output sizes differ
+    low_bitrate = %ConstantBitrate{bitrate: 100_000, virtual_buffer_size_ms: 2000}
+    high_bitrate = %ConstantBitrate{bitrate: 5_000_000, virtual_buffer_size_ms: 2000}
+
+    low_output =
+      transcode_to_bytes_with_bitrate(
+        "./test/fixtures/video.h264",
+        &Preprocessors.parse_h264/1,
+        H264,
+        low_bitrate,
+        :never,
+        tmp_dir
+      )
+
+    high_output =
+      transcode_to_bytes_with_bitrate(
+        "./test/fixtures/video.h264",
+        &Preprocessors.parse_h264/1,
+        H264,
+        high_bitrate,
+        :never,
+        tmp_dir
+      )
+
+    # Low bitrate (100k) should produce output significantly smaller than high bitrate (5M)
+    # With a 50x bitrate difference, we expect the file size ratio to be substantial
+    # We check that low output is less than 25% of high output size
+    assert byte_size(low_output) > 0, "Low bitrate output is empty"
+    assert byte_size(high_output) > 0, "High bitrate output is empty"
+
+    low_size = byte_size(low_output)
+    high_size = byte_size(high_output)
+    ratio = low_size / high_size
+
+    assert ratio < 0.25,
+           "Low bitrate output (#{low_size} bytes) should be less than 25% of high bitrate output (#{high_size} bytes), but ratio is #{ratio}"
+  end
+
+  @tag :tmp_dir
+  test "bitrate conversion with format change produces valid output", %{tmp_dir: tmp_dir} do
+    bitrate = %ConstantBitrate{bitrate: 1_000_000, virtual_buffer_size_ms: 2000}
+
+    # Transcode H264 to H265 with bitrate
+    output =
+      transcode_to_bytes_with_bitrate(
+        "./test/fixtures/video.h264",
+        &Preprocessors.parse_h264/1,
+        H265,
+        bitrate,
+        :never,
+        tmp_dir
+      )
+
+    assert byte_size(output) > 0, "Output is empty"
+  end
+
+  @tag :tmp_dir
+  test "variable bitrate produces valid output", %{tmp_dir: tmp_dir} do
+    bitrate = %VariableBitrate{
+      average_bitrate: 1_000_000,
+      max_bitrate: 2_000_000,
+      virtual_buffer_size_ms: 2000
+    }
+
+    output =
+      transcode_to_bytes_with_bitrate(
+        "./test/fixtures/video.h264",
+        &Preprocessors.parse_h264/1,
+        H264,
+        bitrate,
+        :never,
+        tmp_dir
+      )
+
+    assert byte_size(output) > 0, "Variable bitrate output is empty"
+  end
+
+  @tag :tmp_dir
+  test "per-output bitrate produces different sizes", %{tmp_dir: tmp_dir} do
+    low_bitrate = %ConstantBitrate{bitrate: 100_000, virtual_buffer_size_ms: 2000}
+    high_bitrate = %ConstantBitrate{bitrate: 3_000_000, virtual_buffer_size_ms: 2000}
+
+    pid = Testing.Pipeline.start_link_supervised!()
+    low_tmp = tmp_path(tmp_dir, "mv_low")
+    high_tmp = tmp_path(tmp_dir, "mv_high")
+
+    spec = [
+      child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
+      |> then(&Preprocessors.parse_h264/1)
+      |> child(:transcoder, %Membrane.Transcoder{
+        output_stream_format: H264,
+        transcoding_policy: :always,
+        native_acceleration: :never
+      }),
+      get_child(:transcoder)
+      |> via_out(Membrane.Pad.ref(:output, 0), options: [bitrate: low_bitrate])
+      |> child(:sink_low, %Membrane.File.Sink{location: low_tmp}),
+      get_child(:transcoder)
+      |> via_out(Membrane.Pad.ref(:output, 1), options: [bitrate: high_bitrate])
+      |> child(:sink_high, %Membrane.File.Sink{location: high_tmp})
+    ]
+
+    Testing.Pipeline.execute_actions(pid, spec: spec)
+    assert_end_of_stream(pid, :sink_low, :input, 30_000)
+    assert_end_of_stream(pid, :sink_high, :input, 30_000)
+    Testing.Pipeline.terminate(pid)
+
+    low_output = File.read!(low_tmp)
+    high_output = File.read!(high_tmp)
+    File.rm(low_tmp)
+    File.rm(high_tmp)
+
+    assert byte_size(low_output) > 0, "Low bitrate multivariant output is empty"
+    assert byte_size(high_output) > 0, "High bitrate multivariant output is empty"
+
+    low_size = byte_size(low_output)
+    high_size = byte_size(high_output)
+    ratio = low_size / high_size
+
+    # With 30x bitrate difference (100k vs 3M), expect low to be less than 50% of high
+    assert ratio < 0.50,
+           "Low bitrate multivariant output (#{low_size} bytes) should be less than 50% of high bitrate (#{high_size} bytes), but ratio is #{ratio}"
   end
 end
