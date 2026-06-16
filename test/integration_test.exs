@@ -479,51 +479,6 @@ defmodule Membrane.Transcoder.IntegrationTest do
     assert mv_vp8 == ref_vp8
   end
 
-  test "multivariant output: per-output transcoding_policy is respected" do
-    pid = Testing.Pipeline.start_link_supervised!()
-
-    spec = [
-      child(:source, %FormatSource{format: %H264{alignment: :au, stream_structure: :annexb}})
-      |> child(:transcoder, Membrane.Transcoder),
-      get_child(:transcoder)
-      |> via_out(Membrane.Pad.ref(:output, 0),
-        options: [
-          output_stream_format: %H264{alignment: :au, stream_structure: :avc1},
-          transcoding_policy: :always
-        ]
-      )
-      |> child(:sink_always, Testing.Sink),
-      get_child(:transcoder)
-      |> via_out(Membrane.Pad.ref(:output, 1),
-        options: [
-          output_stream_format: %H264{alignment: :au, stream_structure: :avc1},
-          transcoding_policy: :if_needed
-        ]
-      )
-      |> child(:sink_if_needed, Testing.Sink)
-    ]
-
-    Testing.Pipeline.execute_actions(pid, spec: spec)
-
-    Process.sleep(500)
-
-    # :always output should have encoder/decoder with "output_0_" prefix
-    assert {:ok, _pid} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {:h264_decoder, {0, :output}}])
-
-    assert {:ok, _pid} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {:h264_encoder, {0, :output}}])
-
-    # :if_needed output should NOT have encoder/decoder (same format type)
-    assert {:error, :child_not_found} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {:h264_decoder, {1, :output}}])
-
-    assert {:error, :child_not_found} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {:h264_encoder, {1, :output}}])
-
-    Testing.Pipeline.terminate(pid)
-  end
-
   @tag :tmp_dir
   test "multivariant output: three audio outputs with different formats", %{tmp_dir: tmp_dir} do
     ref_aac =

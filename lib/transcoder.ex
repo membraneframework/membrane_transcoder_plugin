@@ -34,10 +34,10 @@ defmodule Membrane.Transcoder do
 
       child(:transcoder, Membrane.Transcoder),
       get_child(:transcoder)
-      |> via_out(Pad.ref(:output, 0), options: [output_stream_format: H264, transcoding_policy: :if_needed])
+      |> via_out(Pad.ref(:output, 0), options: [output_stream_format: H264])
       |> child(:h264_sink, Membrane.File.Sink),
       get_child(:transcoder)
-      |> via_out(Pad.ref(:output, 1), options: [output_stream_format: H265, transcoding_policy: :always])
+      |> via_out(Pad.ref(:output, 1), options: [output_stream_format: H265])
       |> child(:h265_sink, Membrane.File.Sink)
   """
   use Membrane.Bin
@@ -120,25 +120,6 @@ defmodule Membrane.Transcoder do
         default: nil,
         description: """
         Per-output stream format.
-        """
-      ],
-      transcoding_policy: [
-        spec:
-          :always
-          | :if_needed
-          | :never
-          | (stream_format() -> :always | :if_needed | :never)
-          | nil,
-        default: nil,
-        description: """
-        Per-output transcoding policy. Inherits from bin's `transcoding_policy` option if nil.
-        """
-      ],
-      native_acceleration: [
-        spec: :never | :if_available | nil,
-        default: nil,
-        description: """
-        Per-output native acceleration setting. Inherits from bin's `native_acceleration` option if nil.
         """
       ],
       bitrate: [
@@ -291,9 +272,9 @@ defmodule Membrane.Transcoder do
 
     output_spec = %{
       output_stream_format: pad_opts.output_stream_format,
-      transcoding_policy: pad_opts.transcoding_policy || state.transcoding_policy,
-      native_acceleration: pad_opts.native_acceleration || state.native_acceleration,
       bitrate: pad_opts.bitrate,
+      transcoding_policy: state.transcoding_policy,
+      native_acceleration: state.native_acceleration,
       resolution: pad_opts.resolution,
       funnel_name: funnel_name,
       suffix: suffix,
