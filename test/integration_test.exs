@@ -614,6 +614,53 @@ defmodule Membrane.Transcoder.IntegrationTest do
            "Low bitrate output (#{low_size} bytes) should be less than 25% of high bitrate output (#{high_size} bytes), but ratio is #{ratio}"
   end
 
+  @tag :vulkan
+  @tag :tmp_dir
+  test "bitrate conversion with vulkan produces different output sizes", %{tmp_dir: tmp_dir} do
+    # Transcode the same input with different bitrates using Vulkan and verify output sizes differ
+    low_bitrate = %ConstantBitrate{
+      bitrate: 100_000,
+      virtual_buffer_size: Membrane.Time.seconds(2)
+    }
+
+    high_bitrate = %ConstantBitrate{
+      bitrate: 5_000_000,
+      virtual_buffer_size: Membrane.Time.seconds(2)
+    }
+
+    low_output =
+      transcode_to_bytes_with_bitrate(
+        "./test/fixtures/video.h264",
+        &Preprocessors.parse_h264/1,
+        H264,
+        low_bitrate,
+        :if_available,
+        tmp_dir
+      )
+
+    high_output =
+      transcode_to_bytes_with_bitrate(
+        "./test/fixtures/video.h264",
+        &Preprocessors.parse_h264/1,
+        H264,
+        high_bitrate,
+        :if_available,
+        tmp_dir
+      )
+
+    # Low bitrate (100k) should produce output significantly smaller than high bitrate (5M)
+    assert byte_size(low_output) > 0, "Low bitrate output is empty"
+    assert byte_size(high_output) > 0, "High bitrate output is empty"
+
+    low_size = byte_size(low_output)
+    high_size = byte_size(high_output)
+    ratio = low_size / high_size
+
+    # With Vulkan acceleration, the compression ratio may vary more, so we use a more lenient threshold
+    assert ratio < 0.30,
+           "Low bitrate output (#{low_size} bytes) should be less than 30% of high bitrate output (#{high_size} bytes), but ratio is #{ratio}"
+  end
+
   @tag :tmp_dir
   test "bitrate conversion with format change produces valid output", %{tmp_dir: tmp_dir} do
     bitrate = %ConstantBitrate{bitrate: 1_000_000, virtual_buffer_size: Membrane.Time.seconds(2)}

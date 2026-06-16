@@ -9,7 +9,7 @@ defmodule Membrane.Transcoder.Video.VariableBitrate do
     spikes while maintaining average bitrate constraints; expressed in bits per second.
   * virtual_buffer_size - virtual buffer duration for rate control smoothing; larger values
     increase bitrate stability, smaller values improve responsiveness to scene changes;
-    expressed in nanoseconds as `Membrane.Time.t()`, defaults to 2 seconds.
+    expressed as `Membrane.Time.t()`, defaults to 2 seconds.
   """
 
   @type t :: %__MODULE__{

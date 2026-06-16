@@ -426,7 +426,7 @@ defmodule Membrane.Transcoder.Video do
     {:constant_bitrate,
      %Membrane.VKVideo.Encoder.ConstantBitrate{
        bitrate: bitrate,
-       virtual_buffer_size_ms: trunc(virtual_buffer_size / 1_000_000)
+       virtual_buffer_size_ms: Membrane.Time.as_milliseconds(virtual_buffer_size, :round)
      }}
   end
 
@@ -439,14 +439,14 @@ defmodule Membrane.Transcoder.Video do
      %Membrane.VKVideo.Encoder.VariableBitrate{
        average_bitrate: avg,
        max_bitrate: max,
-       virtual_buffer_size_ms: trunc(virtual_buffer_size / 1_000_000)
+       virtual_buffer_size_ms: Membrane.Time.as_milliseconds(virtual_buffer_size, :round)
      }}
   end
 
   defp get_h264_ffmpeg_params(nil), do: %{}
 
   defp get_h264_ffmpeg_params(%ConstantBitrate{bitrate: bitrate, virtual_buffer_size: vbr_ns}) do
-    vbr_ms = trunc(vbr_ns / 1_000_000)
+    vbr_ms = Membrane.Time.as_milliseconds(vbr_ns, :round)
 
     %{
       "b" => Integer.to_string(bitrate),
@@ -459,7 +459,7 @@ defmodule Membrane.Transcoder.Video do
          max_bitrate: max,
          virtual_buffer_size: vbr_ns
        }) do
-    vbr_ms = trunc(vbr_ns / 1_000_000)
+    vbr_ms = Membrane.Time.as_milliseconds(vbr_ns, :round)
 
     %{
       "b" => Integer.to_string(avg),
@@ -471,7 +471,7 @@ defmodule Membrane.Transcoder.Video do
   defp get_h265_x265_params(nil), do: ""
 
   defp get_h265_x265_params(%ConstantBitrate{bitrate: bitrate, virtual_buffer_size: vbr_ns}) do
-    vbr_ms = trunc(vbr_ns / 1_000_000)
+    vbr_ms = Membrane.Time.as_milliseconds(vbr_ns, :round)
 
     "bitrate=#{bitrate}:vbv-bufsize=#{trunc(bitrate * vbr_ms / 1000.0 / 8)}:vbv-maxrate=#{bitrate}"
   end
@@ -481,7 +481,7 @@ defmodule Membrane.Transcoder.Video do
          max_bitrate: max,
          virtual_buffer_size: vbr_ns
        }) do
-    vbr_ms = trunc(vbr_ns / 1_000_000)
+    vbr_ms = Membrane.Time.as_milliseconds(vbr_ns, :round)
     "bitrate=#{avg}:vbv-bufsize=#{trunc(avg * vbr_ms / 1000.0 / 8)}:vbv-maxrate=#{max}"
   end
 
