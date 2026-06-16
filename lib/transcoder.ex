@@ -229,6 +229,11 @@ defmodule Membrane.Transcoder do
                 * a `Membrane.Transcoder.Video.ConstantBitrate` struct for constant bitrate encoding
                 * a `Membrane.Transcoder.Video.VariableBitrate` struct for variable bitrate encoding
                 * nil (default) - use encoder defaults
+
+                When nil, the underlying encoders use their default rate control:
+                * H264 (libx264): CRF 23, preset :medium
+                * H265 (libx265): CRF 28, preset :medium
+                * VP8/VP9 (libvpx): VBR mode with auto target bitrate
                 """
               ]
 

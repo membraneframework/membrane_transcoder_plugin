@@ -421,31 +421,33 @@ defmodule Membrane.Transcoder.Video do
 
   defp get_vkvideo_rate_control(%ConstantBitrate{
          bitrate: bitrate,
-         virtual_buffer_size_ms: virtual_buffer_size_ms
+         virtual_buffer_size: virtual_buffer_size
        }) do
     {:constant_bitrate,
      %Membrane.VKVideo.Encoder.ConstantBitrate{
        bitrate: bitrate,
-       virtual_buffer_size_ms: virtual_buffer_size_ms
+       virtual_buffer_size_ms: trunc(virtual_buffer_size / 1_000_000)
      }}
   end
 
   defp get_vkvideo_rate_control(%VariableBitrate{
          average_bitrate: avg,
          max_bitrate: max,
-         virtual_buffer_size_ms: virtual_buffer_size_ms
+         virtual_buffer_size: virtual_buffer_size
        }) do
     {:variable_bitrate,
      %Membrane.VKVideo.Encoder.VariableBitrate{
        average_bitrate: avg,
        max_bitrate: max,
-       virtual_buffer_size_ms: virtual_buffer_size_ms
+       virtual_buffer_size_ms: trunc(virtual_buffer_size / 1_000_000)
      }}
   end
 
   defp get_h264_ffmpeg_params(nil), do: %{}
 
-  defp get_h264_ffmpeg_params(%ConstantBitrate{bitrate: bitrate, virtual_buffer_size_ms: vbr_ms}) do
+  defp get_h264_ffmpeg_params(%ConstantBitrate{bitrate: bitrate, virtual_buffer_size: vbr_ns}) do
+    vbr_ms = trunc(vbr_ns / 1_000_000)
+
     %{
       "b" => Integer.to_string(bitrate),
       "bufsize" => Integer.to_string(trunc(bitrate * vbr_ms / 1000))
@@ -455,8 +457,10 @@ defmodule Membrane.Transcoder.Video do
   defp get_h264_ffmpeg_params(%VariableBitrate{
          average_bitrate: avg,
          max_bitrate: max,
-         virtual_buffer_size_ms: vbr_ms
+         virtual_buffer_size: vbr_ns
        }) do
+    vbr_ms = trunc(vbr_ns / 1_000_000)
+
     %{
       "b" => Integer.to_string(avg),
       "maxrate" => Integer.to_string(max),
@@ -466,15 +470,18 @@ defmodule Membrane.Transcoder.Video do
 
   defp get_h265_x265_params(nil), do: ""
 
-  defp get_h265_x265_params(%ConstantBitrate{bitrate: bitrate, virtual_buffer_size_ms: vbr_ms}) do
+  defp get_h265_x265_params(%ConstantBitrate{bitrate: bitrate, virtual_buffer_size: vbr_ns}) do
+    vbr_ms = trunc(vbr_ns / 1_000_000)
+
     "bitrate=#{bitrate}:vbv-bufsize=#{trunc(bitrate * vbr_ms / 1000.0 / 8)}:vbv-maxrate=#{bitrate}"
   end
 
   defp get_h265_x265_params(%VariableBitrate{
          average_bitrate: avg,
          max_bitrate: max,
-         virtual_buffer_size_ms: vbr_ms
+         virtual_buffer_size: vbr_ns
        }) do
+    vbr_ms = trunc(vbr_ns / 1_000_000)
     "bitrate=#{avg}:vbv-bufsize=#{trunc(avg * vbr_ms / 1000.0 / 8)}:vbv-maxrate=#{max}"
   end
 

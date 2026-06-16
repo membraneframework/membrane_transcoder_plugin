@@ -570,8 +570,15 @@ defmodule Membrane.Transcoder.IntegrationTest do
   @tag :tmp_dir
   test "bitrate conversion produces different output sizes", %{tmp_dir: tmp_dir} do
     # Transcode the same input with different bitrates and verify output sizes differ
-    low_bitrate = %ConstantBitrate{bitrate: 100_000, virtual_buffer_size_ms: 2000}
-    high_bitrate = %ConstantBitrate{bitrate: 5_000_000, virtual_buffer_size_ms: 2000}
+    low_bitrate = %ConstantBitrate{
+      bitrate: 100_000,
+      virtual_buffer_size: Membrane.Time.seconds(2)
+    }
+
+    high_bitrate = %ConstantBitrate{
+      bitrate: 5_000_000,
+      virtual_buffer_size: Membrane.Time.seconds(2)
+    }
 
     low_output =
       transcode_to_bytes_with_bitrate(
@@ -609,7 +616,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
 
   @tag :tmp_dir
   test "bitrate conversion with format change produces valid output", %{tmp_dir: tmp_dir} do
-    bitrate = %ConstantBitrate{bitrate: 1_000_000, virtual_buffer_size_ms: 2000}
+    bitrate = %ConstantBitrate{bitrate: 1_000_000, virtual_buffer_size: Membrane.Time.seconds(2)}
 
     # Transcode H264 to H265 with bitrate
     output =
@@ -630,7 +637,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
     bitrate = %VariableBitrate{
       average_bitrate: 1_000_000,
       max_bitrate: 2_000_000,
-      virtual_buffer_size_ms: 2000
+      virtual_buffer_size: Membrane.Time.seconds(2)
     }
 
     output =
@@ -648,8 +655,15 @@ defmodule Membrane.Transcoder.IntegrationTest do
 
   @tag :tmp_dir
   test "per-output bitrate produces different sizes", %{tmp_dir: tmp_dir} do
-    low_bitrate = %ConstantBitrate{bitrate: 100_000, virtual_buffer_size_ms: 2000}
-    high_bitrate = %ConstantBitrate{bitrate: 3_000_000, virtual_buffer_size_ms: 2000}
+    low_bitrate = %ConstantBitrate{
+      bitrate: 100_000,
+      virtual_buffer_size: Membrane.Time.seconds(2)
+    }
+
+    high_bitrate = %ConstantBitrate{
+      bitrate: 3_000_000,
+      virtual_buffer_size: Membrane.Time.seconds(2)
+    }
 
     pid = Testing.Pipeline.start_link_supervised!()
     low_tmp = tmp_path(tmp_dir, "mv_low")
@@ -689,6 +703,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
     ratio = low_size / high_size
 
     # With 30x bitrate difference (100k vs 3M), expect low to be less than 50% of high
+
     assert ratio < 0.50,
            "Low bitrate multivariant output (#{low_size} bytes) should be less than 50% of high bitrate (#{high_size} bytes), but ratio is #{ratio}"
   end
