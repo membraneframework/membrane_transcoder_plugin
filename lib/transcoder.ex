@@ -119,7 +119,7 @@ defmodule Membrane.Transcoder do
           | nil,
         default: nil,
         description: """
-        Per-output stream format. Inherits from bin's `output_stream_format` option if nil.
+        Per-output stream format.
         """
       ],
       transcoding_policy: [
@@ -153,63 +153,12 @@ defmodule Membrane.Transcoder do
         default: nil,
         description: """
         Per-output video resolution `{width, height}`. Overrides `width` and `height` on the resolved
-        output stream format. Inherits from bin's `resolution` option if nil.
+        output stream format.
         """
       ]
     ]
 
-  def_options output_stream_format: [
-                spec:
-                  stream_format()
-                  | stream_format_module()
-                  | stream_format_tuple()
-                  | stream_format_resolver()
-                  | nil,
-                default: nil,
-                description: """
-                An option specifying the desired output format for all outputs.
-
-                Can be either:
-                * a struct being a Membrane stream format,
-                * a module in which Membrane stream format struct is defined,
-                * a function which receives input stream format as an input argument
-                and is supposed to return the desired output stream format or its module.
-
-                When using per-output `via_out` options, individual outputs can override this value.
-                """
-              ],
-              transcoding_policy: [
-                spec:
-                  :always
-                  | :if_needed
-                  | :never
-                  | (stream_format() -> :always | :if_needed | :never),
-                default: :if_needed,
-                description: """
-                Specifies, when transcoding should be applied.
-
-                Can be either:
-                * an atom: `:always`, `:if_needed` (default) or `:never`,
-                * a function that receives the input stream format and returns either `:always`,
-                  `:if_needed` or `:never`.
-
-                If set to `:always`, the input media stream will be decoded and encoded, even
-                if the input stream format and the output stream format are the same type.
-
-                If set to `:if_needed`, the input media stream will be transcoded only if the input
-                stream format and the output stream format are different types.
-                This is the default behavior.
-
-                If set to `:never`, the input media stream won't be neither decoded nor encoded.
-                Changing alignment, encapsulation or stream structure is still possible. This option
-                is helpful when you want to ensure that #{inspect(__MODULE__)} will not use too much
-                of resources, e.g. CPU or memory.
-
-                If the transition from the input stream format to the output stream format is not
-                possible without decoding or encoding the stream, an error will be raised.
-                """
-              ],
-              assumed_input_stream_format: [
+  def_options assumed_input_stream_format: [
                 spec: struct() | nil,
                 default: nil,
                 description: """
@@ -253,10 +202,38 @@ defmodule Membrane.Transcoder do
                 spec: resolution(),
                 default: nil,
                 description: """
-                Desired output video resolution `{width, height}` applied to all outputs.
+                Per-output video resolution `{width, height}`.
+                """
+              ],
+              transcoding_policy: [
+                spec:
+                  :always
+                  | :if_needed
+                  | :never
+                  | (stream_format() -> :always | :if_needed | :never),
+                default: :if_needed,
+                description: """
+                Specifies when transcoding should be applied.
 
-                When set, overrides `width` and `height` on the resolved output stream format.
-                Individual outputs can override this via the per-output `resolution` pad option.
+                Can be either:
+                * an atom: `:always`, `:if_needed` (default) or `:never`,
+                * a function that receives the input stream format and returns either `:always`,
+                  `:if_needed` or `:never`.
+
+                If set to `:always`, the input media stream will be decoded and encoded, even
+                if the input stream format and the output stream format are the same type.
+
+                If set to `:if_needed`, the input media stream will be transcoded only if the input
+                stream format and the output stream format are different types.
+                This is the default behavior.
+
+                If set to `:never`, the input media stream won't be neither decoded nor encoded.
+                Changing alignment, encapsulation or stream structure is still possible. This option
+                is helpful when you want to ensure that #{inspect(__MODULE__)} will not use too much
+                of resources, e.g. CPU or memory.
+
+                If the transition from the input stream format to the output stream format is not
+                possible without decoding or encoding the stream, an error will be raised.
                 """
               ]
 
@@ -313,11 +290,11 @@ defmodule Membrane.Transcoder do
     funnel_name = {:funnel, suffix}
 
     output_spec = %{
-      output_stream_format: pad_opts.output_stream_format || state.output_stream_format,
+      output_stream_format: pad_opts.output_stream_format,
       transcoding_policy: pad_opts.transcoding_policy || state.transcoding_policy,
       native_acceleration: pad_opts.native_acceleration || state.native_acceleration,
-      bitrate: pad_opts.bitrate || state.bitrate,
-      resolution: pad_opts.resolution || state.resolution,
+      bitrate: pad_opts.bitrate,
+      resolution: pad_opts.resolution,
       funnel_name: funnel_name,
       suffix: suffix,
       pad_id: pad_id

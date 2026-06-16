@@ -116,10 +116,11 @@ defmodule Membrane.Transcoder.IntegrationTest do
         })
         |> then(unquote(test_case.preprocess))
         |> child(:transcoder, %Membrane.Transcoder{
-          output_stream_format: unquote(test_case.output_format),
           assumed_input_stream_format: override_input_stream_format
         })
-        |> via_out(Membrane.Pad.ref(:output, 0))
+        |> via_out(Membrane.Pad.ref(:output, 0),
+          options: [output_stream_format: unquote(test_case.output_format)]
+        )
         |> child(:sink, Testing.Sink)
 
       Testing.Pipeline.execute_actions(pid, spec: spec)
@@ -190,10 +191,11 @@ defmodule Membrane.Transcoder.IntegrationTest do
       })
       |> then(test_case.preprocess)
       |> child(:transcoder, %Membrane.Transcoder{
-        output_stream_format: test_case.output_format,
         native_acceleration: native_acceleration
       })
-      |> via_out(Membrane.Pad.ref(:output, 0))
+      |> via_out(Membrane.Pad.ref(:output, 0),
+        options: [output_stream_format: test_case.output_format]
+      )
       |> child(:sink, %Membrane.File.Sink{location: tmp_path})
 
     Testing.Pipeline.execute_actions(pid, spec: spec)
@@ -311,11 +313,10 @@ defmodule Membrane.Transcoder.IntegrationTest do
       spec = [
         child(:source, %FormatSource{format: format})
         |> child(:transcoder, %Membrane.Transcoder{
-          output_stream_format: output_format,
           transcoding_policy: transcoding_policy
         }),
         get_child(:transcoder)
-        |> via_out(Membrane.Pad.ref(:output, 0))
+        |> via_out(Membrane.Pad.ref(:output, 0), options: [output_stream_format: output_format])
         |> child(:sink, Testing.Sink)
       ]
 
@@ -350,10 +351,9 @@ defmodule Membrane.Transcoder.IntegrationTest do
     spec =
       child(:source, %FormatSource{format: %H264{alignment: :au, stream_structure: :annexb}})
       |> child(:transcoder, %Membrane.Transcoder{
-        output_stream_format: VP8,
         transcoding_policy: :never
       })
-      |> via_out(Membrane.Pad.ref(:output, 0))
+      |> via_out(Membrane.Pad.ref(:output, 0), options: [output_stream_format: VP8])
       |> child(:sink, Testing.Sink)
 
     {:ok, supervisor, pipeline} = Testing.Pipeline.start(spec: [])
@@ -375,12 +375,11 @@ defmodule Membrane.Transcoder.IntegrationTest do
       child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
       |> then(&Preprocessors.parse_h264/1)
       |> child(:transcoder, %Membrane.Transcoder{
-        output_stream_format: H264,
         transcoding_policy: :always,
         native_acceleration: :never
       }),
       get_child(:transcoder)
-      |> via_out(Membrane.Pad.ref(:output, 0))
+      |> via_out(Membrane.Pad.ref(:output, 0), options: [output_stream_format: H264])
       |> child(:sink, Testing.Sink)
     ]
 
@@ -585,9 +584,9 @@ defmodule Membrane.Transcoder.IntegrationTest do
     spec = [
       child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
       |> then(&Preprocessors.parse_h264/1)
-      |> child(:transcoder, %Membrane.Transcoder{output_stream_format: H264}),
+      |> child(:transcoder, %Membrane.Transcoder{}),
       get_child(:transcoder)
-      |> via_out(Membrane.Pad.ref(:output, 0))
+      |> via_out(Membrane.Pad.ref(:output, 0), options: [output_stream_format: H264])
       |> child(:sink_default, Testing.Sink),
       get_child(:transcoder)
       |> via_out(Membrane.Pad.ref(:output, 1), options: [output_stream_format: H265])
@@ -644,10 +643,10 @@ defmodule Membrane.Transcoder.IntegrationTest do
     spec =
       child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
       |> then(&Preprocessors.parse_h264/1)
-      |> child(:transcoder, %Membrane.Transcoder{
-        output_stream_format: {RawVideo, [width: 160, height: 90]}
-      })
-      |> via_out(Membrane.Pad.ref(:output, 0))
+      |> child(:transcoder, %Membrane.Transcoder{})
+      |> via_out(Membrane.Pad.ref(:output, 0),
+        options: [output_stream_format: {RawVideo, [width: 160, height: 90]}]
+      )
       |> child(:sink, Testing.Sink)
 
     Testing.Pipeline.execute_actions(pid, spec: spec)
@@ -663,11 +662,11 @@ defmodule Membrane.Transcoder.IntegrationTest do
     spec = [
       child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
       |> then(&Preprocessors.parse_h264/1)
-      |> child(:transcoder, %Membrane.Transcoder{
-        output_stream_format: {RawVideo, [width: 320, height: 180]}
-      }),
+      |> child(:transcoder, %Membrane.Transcoder{}),
       get_child(:transcoder)
-      |> via_out(Membrane.Pad.ref(:output, 0))
+      |> via_out(Membrane.Pad.ref(:output, 0),
+        options: [output_stream_format: {RawVideo, [width: 320, height: 180]}]
+      )
       |> child(:sink_default, Testing.Sink),
       get_child(:transcoder)
       |> via_out(Membrane.Pad.ref(:output, 1),
@@ -690,12 +689,14 @@ defmodule Membrane.Transcoder.IntegrationTest do
     spec = [
       child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
       |> then(&Preprocessors.parse_h264/1)
-      |> child(:transcoder, %Membrane.Transcoder{output_stream_format: RawVideo}),
+      |> child(:transcoder, %Membrane.Transcoder{}),
       get_child(:transcoder)
-      |> via_out(Membrane.Pad.ref(:output, 0))
+      |> via_out(Membrane.Pad.ref(:output, 0), options: [output_stream_format: RawVideo])
       |> child(:sink_default, Testing.Sink),
       get_child(:transcoder)
-      |> via_out(Membrane.Pad.ref(:output, 1), options: [resolution: {160, 90}])
+      |> via_out(Membrane.Pad.ref(:output, 1),
+        options: [output_stream_format: RawVideo, resolution: {160, 90}]
+      )
       |> child(:sink_scaled, Testing.Sink)
     ]
 
@@ -713,11 +714,10 @@ defmodule Membrane.Transcoder.IntegrationTest do
     spec =
       child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
       |> then(&Preprocessors.parse_h264/1)
-      |> child(:transcoder, %Membrane.Transcoder{
-        output_stream_format: RawVideo,
-        resolution: {160, 90}
-      })
-      |> via_out(Membrane.Pad.ref(:output, 0))
+      |> child(:transcoder, %Membrane.Transcoder{})
+      |> via_out(Membrane.Pad.ref(:output, 0),
+        options: [output_stream_format: RawVideo, resolution: {160, 90}]
+      )
       |> child(:sink, Testing.Sink)
 
     Testing.Pipeline.execute_actions(pid, spec: spec)
@@ -735,12 +735,11 @@ defmodule Membrane.Transcoder.IntegrationTest do
       child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
       |> then(&Preprocessors.parse_h264/1)
       |> child(:transcoder, %Membrane.Transcoder{
-        output_stream_format: H264,
         transcoding_policy: :always,
         native_acceleration: :if_available
       }),
       get_child(:transcoder)
-      |> via_out(Membrane.Pad.ref(:output, 0))
+      |> via_out(Membrane.Pad.ref(:output, 0), options: [output_stream_format: H264])
       |> child(:sink, Testing.Sink)
     ]
 
