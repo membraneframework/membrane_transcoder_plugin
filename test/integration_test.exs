@@ -40,7 +40,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
   # Only H264 outputs exercise the Vulkan-accelerated encode path. Each case
   # has a committed fixture under test/fixtures/vk_outputs/ that pins the
   # expected bitstream produced on a Vulkan-capable machine. To (re)generate
-  # the fixtures, run `REGEN_VK_FIXTURES=1 mix test --include vulkan` once on
+  # the fixtures, run `REGEN_FIXTURES=1 mix test --include vulkan` once on
   # such a machine and commit the resulting files.
   @vk_video_cases for input <- @video_inputs,
                       do: Map.put(input, :output_format, H264)
@@ -161,7 +161,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
   end)
 
   defp assert_or_regenerate_scaled_fixture!(actual, fixture_path) do
-    if System.get_env("REGEN_VK_FIXTURES") == "1" do
+    if System.get_env("REGEN_FIXTURES") == "1" do
       File.mkdir_p!(Path.dirname(fixture_path))
       File.write!(fixture_path, actual)
       IO.puts("Regenerated fixture: #{fixture_path}")
@@ -174,7 +174,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
         {:error, :enoent} ->
           flunk("""
           Missing fixture #{fixture_path}.
-          Run `REGEN_VK_FIXTURES=1 mix test` to generate it, then commit the resulting file.
+          Run `REGEN_FIXTURES=1 mix test` to generate it, then commit the resulting file.
           """)
       end
     end
@@ -264,7 +264,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
   end
 
   defp assert_or_regenerate_fixture!(actual, fixture_path) do
-    if System.get_env("REGEN_VK_FIXTURES") == "1" do
+    if System.get_env("REGEN_FIXTURES") == "1" do
       File.mkdir_p!(Path.dirname(fixture_path))
       File.write!(fixture_path, actual)
       IO.puts("Regenerated fixture: #{fixture_path}")
@@ -277,7 +277,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
         {:error, :enoent} ->
           flunk("""
           Missing fixture #{fixture_path}.
-          Run `REGEN_VK_FIXTURES=1 mix test --include vulkan` on a Vulkan-capable \
+          Run `REGEN_FIXTURES=1 mix test --include vulkan` on a Vulkan-capable \
           machine to generate it, then commit the resulting file.
           """)
       end
