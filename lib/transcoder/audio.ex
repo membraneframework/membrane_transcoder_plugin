@@ -65,17 +65,23 @@ defmodule Membrane.Transcoder.Audio do
           audio_stream_format() | RemoteStream.t(),
           audio_stream_format(),
           :always | :if_needed | :never,
-          String.t() | nil
+          map()
         ) :: ChildrenSpec.builder()
   def plug_audio_transcoding(
         builder,
         input_format,
         output_format,
         transcoding_policy,
-        suffix \\ nil
+        output_spec
       )
       when is_audio_format(input_format) and is_audio_format(output_format) do
-    do_plug_audio_transcoding(builder, input_format, output_format, transcoding_policy, suffix)
+    do_plug_audio_transcoding(
+      builder,
+      input_format,
+      output_format,
+      transcoding_policy,
+      output_spec.suffix
+    )
   end
 
   defp do_plug_audio_transcoding(

@@ -86,6 +86,15 @@ defmodule Membrane.Transcoder do
   """
   @type stream_format_resolver :: (stream_format() -> stream_format() | stream_format_module())
 
+  @typedoc """
+  Describes bitrate option for video transcoding.
+  Can be either a ConstantBitrate or VariableBitrate struct.
+  """
+  @type bitrate_option ::
+          Membrane.Transcoder.Video.ConstantBitrate.t()
+          | Membrane.Transcoder.Video.VariableBitrate.t()
+          | nil
+
   def_input_pad :input,
     accepted_format:
       format
@@ -125,6 +134,13 @@ defmodule Membrane.Transcoder do
         default: nil,
         description: """
         Per-output native acceleration setting. Inherits from bin's `native_acceleration` option if nil.
+        """
+      ],
+      bitrate: [
+        spec: bitrate_option(),
+        default: nil,
+        description: """
+        Per-output bitrate setting for video streams. Inherits from bin's `bitrate` option if nil.
         """
       ]
     ]
@@ -202,6 +218,23 @@ defmodule Membrane.Transcoder do
                 * `:never` - Always use software-based transcoding (default)
                 * `:if_available` - Use Vulkan acceleration when available on the system
                 """
+              ],
+              bitrate: [
+                spec: bitrate_option(),
+                default: nil,
+                description: """
+                Per-output bitrate setting for video streams.
+
+                Can be either:
+                * a `Membrane.Transcoder.Video.ConstantBitrate` struct for constant bitrate encoding
+                * a `Membrane.Transcoder.Video.VariableBitrate` struct for variable bitrate encoding
+                * nil (default) - use encoder defaults
+
+                When nil, the underlying encoders use their default rate control:
+                * H264 (libx264): CRF 23, preset :medium
+                * H265 (libx265): CRF 28, preset :medium
+                * VP8/VP9 (libvpx): VBR mode with auto target bitrate
+                """
               ]
 
   @impl true
@@ -260,6 +293,7 @@ defmodule Membrane.Transcoder do
       output_stream_format: pad_opts.output_stream_format || state.output_stream_format,
       transcoding_policy: pad_opts.transcoding_policy || state.transcoding_policy,
       native_acceleration: pad_opts.native_acceleration || state.native_acceleration,
+      bitrate: pad_opts.bitrate || state.bitrate,
       funnel_name: funnel_name,
       suffix: suffix,
       pad_id: pad_id
@@ -298,7 +332,7 @@ defmodule Membrane.Transcoder do
             resolved_format,
             transcoding_policy,
             use_hw?,
-            output_spec.suffix
+            output_spec
           )
           |> get_child(output_spec.funnel_name)
         ]
@@ -324,7 +358,7 @@ defmodule Membrane.Transcoder do
               resolved_format,
               transcoding_policy,
               use_hw?,
-              output_spec.suffix
+              output_spec
             )
             |> get_child(output_spec.funnel_name)
           end)
@@ -383,11 +417,11 @@ defmodule Membrane.Transcoder do
          output_format,
          transcoding_policy,
          _use_hardware_acceleration?,
-         suffix
+         output_spec
        )
        when Audio.is_audio_format(input_format) do
     builder
-    |> Audio.plug_audio_transcoding(input_format, output_format, transcoding_policy, suffix)
+    |> Audio.plug_audio_transcoding(input_format, output_format, transcoding_policy, output_spec)
   end
 
   defp plug_transcoding(
@@ -396,7 +430,7 @@ defmodule Membrane.Transcoder do
          output_format,
          transcoding_policy,
          use_hardware_acceleration?,
-         suffix
+         output_spec
        )
        when Video.is_video_format(input_format) do
     builder
@@ -405,7 +439,7 @@ defmodule Membrane.Transcoder do
       output_format,
       transcoding_policy,
       use_hardware_acceleration?,
-      suffix
+      output_spec
     )
   end
 end
