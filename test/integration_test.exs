@@ -242,12 +242,15 @@ defmodule Membrane.Transcoder.IntegrationTest do
       child(%Membrane.File.Source{location: input_file})
       |> then(preprocess)
       |> child(:transcoder, %Membrane.Transcoder{
-        output_stream_format: output_format,
         transcoding_policy: :always,
-        native_acceleration: native_acceleration,
-        bitrate: bitrate
+        native_acceleration: native_acceleration
       })
-      |> via_out(Membrane.Pad.ref(:output, 0))
+      |> via_out(Membrane.Pad.ref(:output, 0),
+        options: [
+          output_stream_format: output_format,
+          bitrate: bitrate
+        ]
+      )
       |> child(:sink, %Membrane.File.Sink{location: tmp_path})
 
     Testing.Pipeline.execute_actions(pid, spec: spec)
@@ -872,15 +875,18 @@ defmodule Membrane.Transcoder.IntegrationTest do
       child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
       |> then(&Preprocessors.parse_h264/1)
       |> child(:transcoder, %Membrane.Transcoder{
-        output_stream_format: H264,
         transcoding_policy: :always,
         native_acceleration: :never
       }),
       get_child(:transcoder)
-      |> via_out(Membrane.Pad.ref(:output, 0), options: [bitrate: low_bitrate])
+      |> via_out(Membrane.Pad.ref(:output, 0),
+        options: [output_stream_format: H264, bitrate: low_bitrate]
+      )
       |> child(:sink_low, %Membrane.File.Sink{location: low_tmp}),
       get_child(:transcoder)
-      |> via_out(Membrane.Pad.ref(:output, 1), options: [bitrate: high_bitrate])
+      |> via_out(Membrane.Pad.ref(:output, 1),
+        options: [output_stream_format: H264, bitrate: high_bitrate]
+      )
       |> child(:sink_high, %Membrane.File.Sink{location: high_tmp})
     ]
 
