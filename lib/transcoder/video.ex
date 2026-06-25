@@ -113,19 +113,7 @@ defmodule Membrane.Transcoder.Video do
          %RawVideo{} = input_format,
          %RawVideo{} = output_format,
          _transcoding_policy,
-         true,
-         output_spec
-       ) do
-    builder
-    |> maybe_plug_swscale_converter_vulkan(input_format, output_format, output_spec.suffix)
-  end
-
-  defp do_plug_video_transcoding(
-         builder,
-         %RawVideo{} = input_format,
-         %RawVideo{} = output_format,
-         _transcoding_policy,
-         false,
+         _use_hardware_acceleration?,
          output_spec
        ) do
     builder
@@ -162,18 +150,21 @@ defmodule Membrane.Transcoder.Video do
          with :transcoding_policy option set to :never.
          """)
 
-  defp do_plug_video_transcoding(
-         builder,
-         input_format,
-         output_format,
-         _transcoding_policy,
-         true,
-         output_spec
-       ) do
-    builder
-    |> maybe_plug_parser_and_decoder_vulkan(input_format, output_spec)
-    |> maybe_plug_swscale_converter_vulkan(input_format, output_format, output_spec.suffix)
-    |> maybe_plug_encoder_and_parser_vulkan(output_format, output_spec)
+  if Code.ensure_loaded?(Membrane.VKVideo.Encoder) and
+       Code.ensure_loaded?(Membrane.VKVideo.Decoder) do
+    defp do_plug_video_transcoding(
+           builder,
+           input_format,
+           output_format,
+           _transcoding_policy,
+           true,
+           output_spec
+         ) do
+      builder
+      |> maybe_plug_parser_and_decoder_vulkan(input_format, output_spec)
+      |> maybe_plug_swscale_converter_vulkan(input_format, output_format, output_spec.suffix)
+      |> maybe_plug_encoder_and_parser_vulkan(output_format, output_spec)
+    end
   end
 
   defp do_plug_video_transcoding(
@@ -190,28 +181,32 @@ defmodule Membrane.Transcoder.Video do
     |> maybe_plug_encoder_and_parser(output_format, output_spec)
   end
 
-  # VK-specific decoder: child name :vk_h264_decoder distinguishes it from FFmpeg's :h264_decoder
-  defp maybe_plug_parser_and_decoder_vulkan(builder, %H264{}, output_spec) do
-    suffix = output_spec.suffix
+  if Code.ensure_loaded?(Membrane.VKVideo.Decoder) do
+    # VK-specific decoder: child name :vk_h264_decoder distinguishes it from FFmpeg's :h264_decoder
+    defp maybe_plug_parser_and_decoder_vulkan(builder, %H264{}, output_spec) do
+      suffix = output_spec.suffix
 
-    builder
-    |> child(child_name(suffix, :h264_input_parser), %H264.Parser{
-      output_stream_structure: :annexb,
-      output_alignment: :au
-    })
-    |> child(child_name(suffix, :vk_h264_decoder), Membrane.VKVideo.Decoder)
+      builder
+      |> child(child_name(suffix, :h264_input_parser), %H264.Parser{
+        output_stream_structure: :annexb,
+        output_alignment: :au
+      })
+      |> child(child_name(suffix, :vk_h264_decoder), Membrane.VKVideo.Decoder)
+    end
   end
 
-  defp maybe_plug_parser_and_decoder_vulkan(builder, format, output_spec),
-    do: maybe_plug_parser_and_decoder(builder, format, output_spec.suffix)
+  if Code.ensure_loaded?(Membrane.VKVideo.Decoder) do
+    defp maybe_plug_parser_and_decoder_vulkan(builder, format, output_spec),
+      do: maybe_plug_parser_and_decoder(builder, format, output_spec.suffix)
 
-  defp maybe_plug_parser_and_decoder(builder, %H264{}, suffix) do
-    builder
-    |> child(child_name(suffix, :h264_input_parser), %H264.Parser{
-      output_stream_structure: :annexb,
-      output_alignment: :au
-    })
-    |> child(child_name(suffix, :h264_decoder), %H264.FFmpeg.Decoder{})
+    defp maybe_plug_parser_and_decoder(builder, %H264{}, suffix) do
+      builder
+      |> child(child_name(suffix, :h264_input_parser), %H264.Parser{
+        output_stream_structure: :annexb,
+        output_alignment: :au
+      })
+      |> child(child_name(suffix, :h264_decoder), %H264.FFmpeg.Decoder{})
+    end
   end
 
   defp maybe_plug_parser_and_decoder(builder, %H265{}, suffix) do
@@ -240,55 +235,44 @@ defmodule Membrane.Transcoder.Video do
 
   defp maybe_plug_parser_and_decoder(builder, %RawVideo{}, _suffix), do: builder
 
-  defp maybe_plug_swscale_converter_vulkan(
-         builder,
-         %H264{},
-         %RawVideo{pixel_format: nil},
-         _suffix
-       ),
-       do: builder
+  if Code.ensure_loaded?(Membrane.VKVideo.Encoder) do
+    defp maybe_plug_swscale_converter_vulkan(builder, input_format, output_format, suffix) do
+      case {input_format, output_format} do
+        {%H264{}, %RawVideo{pixel_format: nil}} ->
+          builder
 
-  defp maybe_plug_swscale_converter_vulkan(
-         builder,
-         %H264{},
-         %RawVideo{pixel_format: :NV12},
-         _suffix
-       ),
-       do: builder
+        {%H264{}, %RawVideo{pixel_format: :NV12}} ->
+          builder
 
-  defp maybe_plug_swscale_converter_vulkan(builder, %H264{}, %RawVideo{} = output_format, suffix) do
-    builder
-    |> child(child_name(suffix, :raw_video_converter), %SWScale.Converter{
-      format: output_format.pixel_format
-    })
+        {%H264{}, %RawVideo{pixel_format: pixel_format}} ->
+          builder
+          |> child(child_name(suffix, :raw_video_converter), %SWScale.Converter{
+            format: pixel_format
+          })
+
+        {%RawVideo{pixel_format: :NV12}, %H264{}} ->
+          builder
+
+        {%RawVideo{}, %H264{}} ->
+          builder
+          |> child(child_name(suffix, :raw_video_converter), %SWScale.Converter{format: :NV12})
+
+        {%H264{}, %H264{}} ->
+          builder
+
+        {%H264{}, _output_format} ->
+          builder
+          |> child(child_name(suffix, :raw_video_converter), %SWScale.Converter{format: :I420})
+
+        {_input_format, %H264{}} ->
+          builder
+          |> child(child_name(suffix, :raw_video_converter), %SWScale.Converter{format: :NV12})
+
+        {input_format, output_format} ->
+          maybe_plug_swscale_converter(builder, input_format, output_format, suffix)
+      end
+    end
   end
-
-  defp maybe_plug_swscale_converter_vulkan(
-         builder,
-         %RawVideo{pixel_format: :NV12},
-         %H264{},
-         _suffix
-       ),
-       do: builder
-
-  defp maybe_plug_swscale_converter_vulkan(builder, %RawVideo{}, %H264{}, suffix) do
-    builder |> child(child_name(suffix, :raw_video_converter), %SWScale.Converter{format: :NV12})
-  end
-
-  defp maybe_plug_swscale_converter_vulkan(builder, %H264{}, %H264{}, _suffix), do: builder
-
-  defp maybe_plug_swscale_converter_vulkan(builder, %H264{}, _output_format, suffix) do
-    builder
-    |> child(child_name(suffix, :raw_video_converter), %SWScale.Converter{format: :I420})
-  end
-
-  defp maybe_plug_swscale_converter_vulkan(builder, _input_format, %H264{}, suffix) do
-    builder
-    |> child(child_name(suffix, :raw_video_converter), %SWScale.Converter{format: :NV12})
-  end
-
-  defp maybe_plug_swscale_converter_vulkan(builder, input_format, output_format, suffix),
-    do: maybe_plug_swscale_converter(builder, input_format, output_format, suffix)
 
   defp maybe_plug_swscale_converter(builder, input_format, %RawVideo{} = output_format, suffix) do
     case input_format do
@@ -323,23 +307,25 @@ defmodule Membrane.Transcoder.Video do
 
   defp maybe_plug_swscale_converter(builder, _input_format, _output_format, _suffix), do: builder
 
-  defp maybe_plug_encoder_and_parser_vulkan(builder, %H264{} = h264, output_spec) do
-    suffix = output_spec.suffix
-    bitrate = output_spec.bitrate
-    rate_control = get_vkvideo_rate_control(bitrate)
+  if Code.ensure_loaded?(Membrane.VKVideo.Encoder) do
+    defp maybe_plug_encoder_and_parser_vulkan(builder, %H264{} = h264, output_spec) do
+      suffix = output_spec.suffix
+      bitrate = output_spec.bitrate
+      rate_control = get_vkvideo_rate_control(bitrate)
 
-    builder
-    |> child(child_name(suffix, :vk_h264_encoder), %Membrane.VKVideo.Encoder{
-      rate_control: rate_control
-    })
-    |> child(child_name(suffix, :h264_output_parser), %H264.Parser{
-      output_stream_structure: stream_structure_type(h264),
-      output_alignment: h264.alignment
-    })
+      builder
+      |> child(child_name(suffix, :vk_h264_encoder), %Membrane.VKVideo.Encoder{
+        rate_control: rate_control
+      })
+      |> child(child_name(suffix, :h264_output_parser), %H264.Parser{
+        output_stream_structure: stream_structure_type(h264),
+        output_alignment: h264.alignment
+      })
+    end
+
+    defp maybe_plug_encoder_and_parser_vulkan(builder, format, output_spec),
+      do: maybe_plug_encoder_and_parser(builder, format, output_spec)
   end
-
-  defp maybe_plug_encoder_and_parser_vulkan(builder, format, output_spec),
-    do: maybe_plug_encoder_and_parser(builder, format, output_spec)
 
   defp maybe_plug_encoder_and_parser(builder, %H264{} = h264, output_spec) do
     suffix = output_spec.suffix
@@ -417,30 +403,32 @@ defmodule Membrane.Transcoder.Video do
     end
   end
 
-  defp get_vkvideo_rate_control(nil), do: :encoder_default
+  if Code.ensure_loaded?(Membrane.VKVideo.Encoder) do
+    defp get_vkvideo_rate_control(nil), do: :encoder_default
 
-  defp get_vkvideo_rate_control(%ConstantBitrate{
+    defp get_vkvideo_rate_control(%ConstantBitrate{
+           bitrate: bitrate,
+           virtual_buffer_size: virtual_buffer_size
+         }) do
+      {:constant_bitrate,
+       %Membrane.VKVideo.Encoder.ConstantBitrate{
          bitrate: bitrate,
-         virtual_buffer_size: virtual_buffer_size
-       }) do
-    {:constant_bitrate,
-     %Membrane.VKVideo.Encoder.ConstantBitrate{
-       bitrate: bitrate,
-       virtual_buffer_size_ms: Membrane.Time.as_milliseconds(virtual_buffer_size, :round)
-     }}
-  end
+         virtual_buffer_size_ms: Membrane.Time.as_milliseconds(virtual_buffer_size, :round)
+       }}
+    end
 
-  defp get_vkvideo_rate_control(%VariableBitrate{
+    defp get_vkvideo_rate_control(%VariableBitrate{
+           average_bitrate: avg,
+           max_bitrate: max,
+           virtual_buffer_size: virtual_buffer_size
+         }) do
+      {:variable_bitrate,
+       %Membrane.VKVideo.Encoder.VariableBitrate{
          average_bitrate: avg,
          max_bitrate: max,
-         virtual_buffer_size: virtual_buffer_size
-       }) do
-    {:variable_bitrate,
-     %Membrane.VKVideo.Encoder.VariableBitrate{
-       average_bitrate: avg,
-       max_bitrate: max,
-       virtual_buffer_size_ms: Membrane.Time.as_milliseconds(virtual_buffer_size, :round)
-     }}
+         virtual_buffer_size_ms: Membrane.Time.as_milliseconds(virtual_buffer_size, :round)
+       }}
+    end
   end
 
   defp get_h264_ffmpeg_params(nil), do: %{}
