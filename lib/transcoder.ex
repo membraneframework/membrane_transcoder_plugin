@@ -162,30 +162,6 @@ defmodule Membrane.Transcoder do
                 * `:if_available` - Use Vulkan acceleration when available on the system
                 """
               ],
-              bitrate: [
-                spec: bitrate_option(),
-                default: nil,
-                description: """
-                Per-output bitrate setting for video streams.
-
-                Can be either:
-                * a `Membrane.Transcoder.Video.ConstantBitrate` struct for constant bitrate encoding
-                * a `Membrane.Transcoder.Video.VariableBitrate` struct for variable bitrate encoding
-                * nil (default) - use encoder defaults
-
-                When nil, the underlying encoders use their default rate control:
-                * H264 (libx264): CRF 23, preset :medium
-                * H265 (libx265): CRF 28, preset :medium
-                * VP8/VP9 (libvpx): VBR mode with auto target bitrate
-                """
-              ],
-              resolution: [
-                spec: resolution(),
-                default: nil,
-                description: """
-                Per-output video resolution `{width, height}`.
-                """
-              ],
               transcoding_policy: [
                 spec:
                   :always
