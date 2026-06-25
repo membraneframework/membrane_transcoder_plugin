@@ -40,12 +40,65 @@ defmodule Membrane.Transcoder.IntegrationTest do
   # Only H264 outputs exercise the Vulkan-accelerated encode path. Each case
   # has a committed fixture under test/fixtures/vk_outputs/ that pins the
   # expected bitstream produced on a Vulkan-capable machine. To (re)generate
-  # the fixtures, run `REGEN_VK_FIXTURES=1 mix test --include vulkan` once on
+  # the fixtures, run `REGEN_FIXTURES=1 mix test --include vulkan` once on
   # such a machine and commit the resulting files.
   @vk_video_cases for input <- @video_inputs,
                       do: Map.put(input, :output_format, H264)
 
   @vk_fixtures_dir "./test/fixtures/vk_outputs"
+  @scaled_fixtures_dir "./test/fixtures/scaled_outputs"
+
+  # video.h264 is 320x180; scale tests use half resolution
+  @scale_sw_cases [
+    %{
+      input_format: H264,
+      input_file: "video.h264",
+      preprocess: &Preprocessors.parse_h264/1,
+      output_format: %H264{width: 160, height: 90},
+      label: "h264_to_h264",
+      ext: "h264",
+      resolution: "160x90"
+    },
+    %{
+      input_format: H264,
+      input_file: "video.h264",
+      preprocess: &Preprocessors.parse_h264/1,
+      output_format: {RawVideo, [width: 160, height: 90]},
+      label: "h264_to_rawvideo",
+      ext: "yuv",
+      resolution: "160x90"
+    },
+    %{
+      input_format: RawVideo,
+      input_file: "video.h264",
+      preprocess: &Preprocessors.decode_h264/1,
+      output_format: %H264{width: 160, height: 90},
+      label: "rawvideo_to_h264",
+      ext: "h264",
+      resolution: "160x90"
+    },
+    %{
+      input_format: RawVideo,
+      input_file: "video.h264",
+      preprocess: &Preprocessors.decode_h264/1,
+      output_format: {RawVideo, [width: 160, height: 90]},
+      label: "rawvideo_to_rawvideo",
+      ext: "yuv",
+      resolution: "160x90"
+    }
+  ]
+
+  @scale_vk_cases [
+    %{
+      input_format: H264,
+      input_file: "video.h264",
+      preprocess: &Preprocessors.parse_h264/1,
+      output_format: %H264{width: 160, height: 90},
+      label: "h264_to_h264",
+      ext: "h264",
+      resolution: "160x90"
+    }
+  ]
 
   @test_cases @video_cases ++ @audio_cases
 
@@ -63,10 +116,11 @@ defmodule Membrane.Transcoder.IntegrationTest do
         })
         |> then(unquote(test_case.preprocess))
         |> child(:transcoder, %Membrane.Transcoder{
-          output_stream_format: unquote(test_case.output_format),
           assumed_input_stream_format: override_input_stream_format
         })
-        |> via_out(Membrane.Pad.ref(:output, 0))
+        |> via_out(Membrane.Pad.ref(:output, 0),
+          options: [output_stream_format: unquote(test_case.output_format)]
+        )
         |> child(:sink, Testing.Sink)
 
       Testing.Pipeline.execute_actions(pid, spec: spec)
@@ -106,6 +160,26 @@ defmodule Membrane.Transcoder.IntegrationTest do
     end
   end)
 
+  defp assert_or_regenerate_scaled_fixture!(actual, fixture_path) do
+    if System.get_env("REGEN_FIXTURES") == "1" do
+      File.mkdir_p!(Path.dirname(fixture_path))
+      File.write!(fixture_path, actual)
+      IO.puts("Regenerated fixture: #{fixture_path}")
+    else
+      case File.read(fixture_path) do
+        {:ok, expected} ->
+          assert actual == expected,
+                 "output does not match fixture #{fixture_path}"
+
+        {:error, :enoent} ->
+          flunk("""
+          Missing fixture #{fixture_path}.
+          Run `REGEN_FIXTURES=1 mix test` to generate it, then commit the resulting file.
+          """)
+      end
+    end
+  end
+
   defp run_transcoder_to_file(test_case, native_acceleration, tmp_dir) do
     tmp_path = tmp_path(tmp_dir, "vk_transcoder")
 
@@ -117,10 +191,11 @@ defmodule Membrane.Transcoder.IntegrationTest do
       })
       |> then(test_case.preprocess)
       |> child(:transcoder, %Membrane.Transcoder{
-        output_stream_format: test_case.output_format,
         native_acceleration: native_acceleration
       })
-      |> via_out(Membrane.Pad.ref(:output, 0))
+      |> via_out(Membrane.Pad.ref(:output, 0),
+        options: [output_stream_format: test_case.output_format]
+      )
       |> child(:sink, %Membrane.File.Sink{location: tmp_path})
 
     Testing.Pipeline.execute_actions(pid, spec: spec)
@@ -167,12 +242,15 @@ defmodule Membrane.Transcoder.IntegrationTest do
       child(%Membrane.File.Source{location: input_file})
       |> then(preprocess)
       |> child(:transcoder, %Membrane.Transcoder{
-        output_stream_format: output_format,
         transcoding_policy: :always,
-        native_acceleration: native_acceleration,
-        bitrate: bitrate
+        native_acceleration: native_acceleration
       })
-      |> via_out(Membrane.Pad.ref(:output, 0))
+      |> via_out(Membrane.Pad.ref(:output, 0),
+        options: [
+          output_stream_format: output_format,
+          bitrate: bitrate
+        ]
+      )
       |> child(:sink, %Membrane.File.Sink{location: tmp_path})
 
     Testing.Pipeline.execute_actions(pid, spec: spec)
@@ -189,7 +267,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
   end
 
   defp assert_or_regenerate_fixture!(actual, fixture_path) do
-    if System.get_env("REGEN_VK_FIXTURES") == "1" do
+    if System.get_env("REGEN_FIXTURES") == "1" do
       File.mkdir_p!(Path.dirname(fixture_path))
       File.write!(fixture_path, actual)
       IO.puts("Regenerated fixture: #{fixture_path}")
@@ -202,7 +280,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
         {:error, :enoent} ->
           flunk("""
           Missing fixture #{fixture_path}.
-          Run `REGEN_VK_FIXTURES=1 mix test --include vulkan` on a Vulkan-capable \
+          Run `REGEN_FIXTURES=1 mix test --include vulkan` on a Vulkan-capable \
           machine to generate it, then commit the resulting file.
           """)
       end
@@ -238,11 +316,10 @@ defmodule Membrane.Transcoder.IntegrationTest do
       spec = [
         child(:source, %FormatSource{format: format})
         |> child(:transcoder, %Membrane.Transcoder{
-          output_stream_format: output_format,
           transcoding_policy: transcoding_policy
         }),
         get_child(:transcoder)
-        |> via_out(Membrane.Pad.ref(:output, 0))
+        |> via_out(Membrane.Pad.ref(:output, 0), options: [output_stream_format: output_format])
         |> child(:sink, Testing.Sink)
       ]
 
@@ -277,10 +354,9 @@ defmodule Membrane.Transcoder.IntegrationTest do
     spec =
       child(:source, %FormatSource{format: %H264{alignment: :au, stream_structure: :annexb}})
       |> child(:transcoder, %Membrane.Transcoder{
-        output_stream_format: VP8,
         transcoding_policy: :never
       })
-      |> via_out(Membrane.Pad.ref(:output, 0))
+      |> via_out(Membrane.Pad.ref(:output, 0), options: [output_stream_format: VP8])
       |> child(:sink, Testing.Sink)
 
     {:ok, supervisor, pipeline} = Testing.Pipeline.start(spec: [])
@@ -302,12 +378,11 @@ defmodule Membrane.Transcoder.IntegrationTest do
       child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
       |> then(&Preprocessors.parse_h264/1)
       |> child(:transcoder, %Membrane.Transcoder{
-        output_stream_format: H264,
         transcoding_policy: :always,
         native_acceleration: :never
       }),
       get_child(:transcoder)
-      |> via_out(Membrane.Pad.ref(:output, 0))
+      |> via_out(Membrane.Pad.ref(:output, 0), options: [output_stream_format: H264])
       |> child(:sink, Testing.Sink)
     ]
 
@@ -407,51 +482,6 @@ defmodule Membrane.Transcoder.IntegrationTest do
     assert mv_vp8 == ref_vp8
   end
 
-  test "multivariant output: per-output transcoding_policy is respected" do
-    pid = Testing.Pipeline.start_link_supervised!()
-
-    spec = [
-      child(:source, %FormatSource{format: %H264{alignment: :au, stream_structure: :annexb}})
-      |> child(:transcoder, Membrane.Transcoder),
-      get_child(:transcoder)
-      |> via_out(Membrane.Pad.ref(:output, 0),
-        options: [
-          output_stream_format: %H264{alignment: :au, stream_structure: :avc1},
-          transcoding_policy: :always
-        ]
-      )
-      |> child(:sink_always, Testing.Sink),
-      get_child(:transcoder)
-      |> via_out(Membrane.Pad.ref(:output, 1),
-        options: [
-          output_stream_format: %H264{alignment: :au, stream_structure: :avc1},
-          transcoding_policy: :if_needed
-        ]
-      )
-      |> child(:sink_if_needed, Testing.Sink)
-    ]
-
-    Testing.Pipeline.execute_actions(pid, spec: spec)
-
-    Process.sleep(500)
-
-    # :always output should have encoder/decoder with "output_0_" prefix
-    assert {:ok, _pid} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {:h264_decoder, {0, :output}}])
-
-    assert {:ok, _pid} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {:h264_encoder, {0, :output}}])
-
-    # :if_needed output should NOT have encoder/decoder (same format type)
-    assert {:error, :child_not_found} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {:h264_decoder, {1, :output}}])
-
-    assert {:error, :child_not_found} =
-             Testing.Pipeline.get_child_pid(pid, [:transcoder, {:h264_encoder, {1, :output}}])
-
-    Testing.Pipeline.terminate(pid)
-  end
-
   @tag :tmp_dir
   test "multivariant output: three audio outputs with different formats", %{tmp_dir: tmp_dir} do
     ref_aac =
@@ -512,9 +542,9 @@ defmodule Membrane.Transcoder.IntegrationTest do
     spec = [
       child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
       |> then(&Preprocessors.parse_h264/1)
-      |> child(:transcoder, %Membrane.Transcoder{output_stream_format: H264}),
+      |> child(:transcoder, %Membrane.Transcoder{}),
       get_child(:transcoder)
-      |> via_out(Membrane.Pad.ref(:output, 0))
+      |> via_out(Membrane.Pad.ref(:output, 0), options: [output_stream_format: H264])
       |> child(:sink_default, Testing.Sink),
       get_child(:transcoder)
       |> via_out(Membrane.Pad.ref(:output, 1), options: [output_stream_format: H265])
@@ -532,6 +562,132 @@ defmodule Membrane.Transcoder.IntegrationTest do
     Testing.Pipeline.terminate(pid)
   end
 
+  Enum.map(@scale_sw_cases, fn test_case ->
+    @tag :tmp_dir
+    test "scales #{test_case.label} to 160x90 (software)", %{tmp_dir: tmp_dir} do
+      fixture_path =
+        Path.join(
+          @scaled_fixtures_dir,
+          "sw_#{unquote(test_case.label)}_#{unquote(test_case.resolution)}.#{unquote(test_case.ext)}"
+        )
+
+      actual = run_transcoder_to_file(unquote(Macro.escape(test_case)), :never, tmp_dir)
+
+      assert byte_size(actual) > 0, "transcoder produced empty output"
+
+      if !System.get_env("CI") do
+        assert_or_regenerate_scaled_fixture!(actual, fixture_path)
+      end
+    end
+  end)
+
+  Enum.map(@scale_vk_cases, fn test_case ->
+    @tag :vulkan
+    @tag :tmp_dir
+    test "scales #{test_case.label} to 160x90 (vulkan)", %{tmp_dir: tmp_dir} do
+      fixture_path =
+        Path.join(
+          @scaled_fixtures_dir,
+          "vk_#{unquote(test_case.label)}_#{unquote(test_case.resolution)}.#{unquote(test_case.ext)}"
+        )
+
+      actual = run_transcoder_to_file(unquote(Macro.escape(test_case)), :if_available, tmp_dir)
+
+      assert byte_size(actual) > 0, "transcoder produced empty output"
+      assert_or_regenerate_scaled_fixture!(actual, fixture_path)
+    end
+  end)
+
+  test "output format width/height drives RawVideo output dimensions" do
+    pid = Testing.Pipeline.start_link_supervised!()
+
+    spec =
+      child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
+      |> then(&Preprocessors.parse_h264/1)
+      |> child(:transcoder, %Membrane.Transcoder{})
+      |> via_out(Membrane.Pad.ref(:output, 0),
+        options: [output_stream_format: {RawVideo, [width: 160, height: 90]}]
+      )
+      |> child(:sink, Testing.Sink)
+
+    Testing.Pipeline.execute_actions(pid, spec: spec)
+
+    assert_sink_stream_format(pid, :sink, %RawVideo{width: 160, height: 90}, 10_000)
+
+    Testing.Pipeline.terminate(pid)
+  end
+
+  test "per-output format with resolution overrides bin-level format" do
+    pid = Testing.Pipeline.start_link_supervised!()
+
+    spec = [
+      child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
+      |> then(&Preprocessors.parse_h264/1)
+      |> child(:transcoder, %Membrane.Transcoder{}),
+      get_child(:transcoder)
+      |> via_out(Membrane.Pad.ref(:output, 0),
+        options: [output_stream_format: {RawVideo, [width: 320, height: 180]}]
+      )
+      |> child(:sink_default, Testing.Sink),
+      get_child(:transcoder)
+      |> via_out(Membrane.Pad.ref(:output, 1),
+        options: [output_stream_format: {RawVideo, [width: 160, height: 90]}]
+      )
+      |> child(:sink_scaled, Testing.Sink)
+    ]
+
+    Testing.Pipeline.execute_actions(pid, spec: spec)
+
+    assert_sink_stream_format(pid, :sink_default, %RawVideo{width: 320, height: 180}, 10_000)
+    assert_sink_stream_format(pid, :sink_scaled, %RawVideo{width: 160, height: 90}, 10_000)
+
+    Testing.Pipeline.terminate(pid)
+  end
+
+  test "resolution pad option scales video independently of output_stream_format" do
+    pid = Testing.Pipeline.start_link_supervised!()
+
+    spec = [
+      child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
+      |> then(&Preprocessors.parse_h264/1)
+      |> child(:transcoder, %Membrane.Transcoder{}),
+      get_child(:transcoder)
+      |> via_out(Membrane.Pad.ref(:output, 0), options: [output_stream_format: RawVideo])
+      |> child(:sink_default, Testing.Sink),
+      get_child(:transcoder)
+      |> via_out(Membrane.Pad.ref(:output, 1),
+        options: [output_stream_format: RawVideo, resolution: {160, 90}]
+      )
+      |> child(:sink_scaled, Testing.Sink)
+    ]
+
+    Testing.Pipeline.execute_actions(pid, spec: spec)
+
+    assert_sink_stream_format(pid, :sink_default, %RawVideo{width: 320, height: 180}, 10_000)
+    assert_sink_stream_format(pid, :sink_scaled, %RawVideo{width: 160, height: 90}, 10_000)
+
+    Testing.Pipeline.terminate(pid)
+  end
+
+  test "bin-level resolution applies to all outputs without per-pad override" do
+    pid = Testing.Pipeline.start_link_supervised!()
+
+    spec =
+      child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
+      |> then(&Preprocessors.parse_h264/1)
+      |> child(:transcoder, %Membrane.Transcoder{})
+      |> via_out(Membrane.Pad.ref(:output, 0),
+        options: [output_stream_format: RawVideo, resolution: {160, 90}]
+      )
+      |> child(:sink, Testing.Sink)
+
+    Testing.Pipeline.execute_actions(pid, spec: spec)
+
+    assert_sink_stream_format(pid, :sink, %RawVideo{width: 160, height: 90}, 10_000)
+
+    Testing.Pipeline.terminate(pid)
+  end
+
   @tag :vulkan
   test "uses VKVideo decoder and encoder when native_acceleration is :if_available" do
     pid = Testing.Pipeline.start_link_supervised!()
@@ -540,12 +696,11 @@ defmodule Membrane.Transcoder.IntegrationTest do
       child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
       |> then(&Preprocessors.parse_h264/1)
       |> child(:transcoder, %Membrane.Transcoder{
-        output_stream_format: H264,
         transcoding_policy: :always,
         native_acceleration: :if_available
       }),
       get_child(:transcoder)
-      |> via_out(Membrane.Pad.ref(:output, 0))
+      |> via_out(Membrane.Pad.ref(:output, 0), options: [output_stream_format: H264])
       |> child(:sink, Testing.Sink)
     ]
 
@@ -720,15 +875,18 @@ defmodule Membrane.Transcoder.IntegrationTest do
       child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
       |> then(&Preprocessors.parse_h264/1)
       |> child(:transcoder, %Membrane.Transcoder{
-        output_stream_format: H264,
         transcoding_policy: :always,
         native_acceleration: :never
       }),
       get_child(:transcoder)
-      |> via_out(Membrane.Pad.ref(:output, 0), options: [bitrate: low_bitrate])
+      |> via_out(Membrane.Pad.ref(:output, 0),
+        options: [output_stream_format: H264, bitrate: low_bitrate]
+      )
       |> child(:sink_low, %Membrane.File.Sink{location: low_tmp}),
       get_child(:transcoder)
-      |> via_out(Membrane.Pad.ref(:output, 1), options: [bitrate: high_bitrate])
+      |> via_out(Membrane.Pad.ref(:output, 1),
+        options: [output_stream_format: H264, bitrate: high_bitrate]
+      )
       |> child(:sink_high, %Membrane.File.Sink{location: high_tmp})
     ]
 

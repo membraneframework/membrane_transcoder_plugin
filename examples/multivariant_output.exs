@@ -36,6 +36,7 @@ defmodule Example do
       |> via_out(Membrane.Pad.ref(:output, 0),
         options: [
           output_stream_format: %H264{alignment: :au, stream_structure: :annexb},
+          resolution: {320, 160},
           transcoding_policy: :if_needed
         ]
       )

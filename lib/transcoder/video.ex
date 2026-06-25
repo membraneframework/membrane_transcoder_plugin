@@ -3,7 +3,8 @@ defmodule Membrane.Transcoder.Video do
 
   import Membrane.ChildrenSpec
   require Membrane.Logger
-  alias Membrane.{ChildrenSpec, H264, H265, RawVideo, RemoteStream, VP8, VP9}
+  require Membrane.Pad
+  alias Membrane.{ChildrenSpec, H264, H265, Pad, RawVideo, RemoteStream, VP8, VP9}
   alias Membrane.FFmpeg.SWScale
   alias Membrane.Transcoder.Video.{ConstantBitrate, VariableBitrate}
 
@@ -29,6 +30,20 @@ defmodule Membrane.Transcoder.Video do
            when is_h26x_format(format) or
                   is_vpx_format(format) or
                   is_raw_video_format(format)
+
+  # Input format natively produces/consumes NV12 in the VK pipeline (H264 via VK decoder, or raw NV12)
+  defguardp is_vk_video_friendly_format(format)
+            when is_struct(format, H264) or
+                   (is_struct(format, RawVideo) and format.pixel_format == :NV12)
+
+  # No conversion needed when output is RawVideo with no scaling: pixel format is unspecified or already matches
+  defguardp raw_video_passthrough(input, out_pf)
+            when out_pf == nil or (is_struct(input, RawVideo) and input.pixel_format == out_pf)
+
+  # Input pixel format is compatible with H264/H265 FFmpeg encoder (I420 or I422), or input is already encoded
+  defguardp is_x264_friendly_format(input)
+            when is_struct(input, H264) or is_struct(input, H265) or
+                   (is_struct(input, RawVideo) and input.pixel_format in [:I420, :I422])
 
   @spec plug_video_transcoding(
           ChildrenSpec.builder(),
@@ -79,7 +94,7 @@ defmodule Membrane.Transcoder.Video do
   defp do_plug_video_transcoding(
          builder,
          %H264{},
-         %H264{} = output_format,
+         %H264{width: nil, height: nil} = output_format,
          transcoding_policy,
          _use_hardware_acceleration?,
          output_spec
@@ -95,7 +110,7 @@ defmodule Membrane.Transcoder.Video do
   defp do_plug_video_transcoding(
          builder,
          %H265{},
-         %H265{} = output_format,
+         %H265{width: nil, height: nil} = output_format,
          transcoding_policy,
          _use_hardware_acceleration?,
          output_spec
@@ -106,6 +121,21 @@ defmodule Membrane.Transcoder.Video do
       output_stream_structure: stream_structure_type(output_format),
       output_alignment: output_format.alignment
     })
+  end
+
+  defp do_plug_video_transcoding(
+         _builder,
+         %format_module{},
+         %format_module{width: width, height: height},
+         :never,
+         _use_hardware_acceleration?,
+         _suffix
+       )
+       when not is_nil(width) or not is_nil(height) do
+    raise """
+    Cannot scale resolution to #{width}x#{height} for #{format_module} \
+    with :transcoding_policy set to :never — resolution scaling requires re-encoding.
+    """
   end
 
   defp do_plug_video_transcoding(
@@ -135,7 +165,7 @@ defmodule Membrane.Transcoder.Video do
   defp do_plug_video_transcoding(
          builder,
          %format_module{},
-         %format_module{},
+         %format_module{width: nil, height: nil},
          transcoding_policy,
          _use_hardware_acceleration?,
          _output_spec
@@ -161,6 +191,30 @@ defmodule Membrane.Transcoder.Video do
          Cannot convert input format #{inspect(input_format)} to output format #{inspect(output_format)} \
          with :transcoding_policy option set to :never.
          """)
+
+  # # H264 -> H264 with scaling using VKVideo.Transcoder for hardware-accelerated scaling
+  defp do_plug_video_transcoding(
+         builder,
+         %H264{},
+         %H264{width: w, height: h} = output_format,
+         transcoding_policy,
+         true,
+         suffix
+       )
+       when w != nil and h != nil and
+              transcoding_policy != :never do
+    builder
+    |> plug_h264_input_parser(suffix)
+    |> child(child_name(suffix, :vk_transcoder), Membrane.VKVideo.Transcoder)
+    |> via_out(Pad.ref(:output, 0),
+      options: [
+        width: w,
+        height: h,
+        scaling_algorithm: :bilinear
+      ]
+    )
+    |> plug_output_parser(output_format, suffix)
+  end
 
   defp do_plug_video_transcoding(
          builder,
@@ -195,10 +249,7 @@ defmodule Membrane.Transcoder.Video do
     suffix = output_spec.suffix
 
     builder
-    |> child(child_name(suffix, :h264_input_parser), %H264.Parser{
-      output_stream_structure: :annexb,
-      output_alignment: :au
-    })
+    |> plug_h264_input_parser(suffix)
     |> child(child_name(suffix, :vk_h264_decoder), Membrane.VKVideo.Decoder)
   end
 
@@ -207,10 +258,7 @@ defmodule Membrane.Transcoder.Video do
 
   defp maybe_plug_parser_and_decoder(builder, %H264{}, suffix) do
     builder
-    |> child(child_name(suffix, :h264_input_parser), %H264.Parser{
-      output_stream_structure: :annexb,
-      output_alignment: :au
-    })
+    |> plug_h264_input_parser(suffix)
     |> child(child_name(suffix, :h264_decoder), %H264.FFmpeg.Decoder{})
   end
 
@@ -240,88 +288,117 @@ defmodule Membrane.Transcoder.Video do
 
   defp maybe_plug_parser_and_decoder(builder, %RawVideo{}, _suffix), do: builder
 
+  # H264 (VK decoded) → RawVideo: skip converter only when no format change and no scaling requested
   defp maybe_plug_swscale_converter_vulkan(
          builder,
          %H264{},
-         %RawVideo{pixel_format: nil},
+         %RawVideo{pixel_format: pixel_format, width: nil, height: nil},
          _suffix
-       ),
+       )
+       when pixel_format in [nil, :NV12],
        do: builder
 
   defp maybe_plug_swscale_converter_vulkan(
          builder,
          %H264{},
-         %RawVideo{pixel_format: :NV12},
-         _suffix
-       ),
-       do: builder
-
-  defp maybe_plug_swscale_converter_vulkan(builder, %H264{}, %RawVideo{} = output_format, suffix) do
+         %RawVideo{pixel_format: pixel_format} = output_format,
+         suffix
+       ) do
     builder
-    |> child(child_name(suffix, :raw_video_converter), %SWScale.Converter{
-      format: output_format.pixel_format
-    })
+    |> child(
+      child_name(suffix, :raw_video_converter),
+      swscale_converter(pixel_format || :NV12, output_format)
+    )
   end
+
+  # → H264: skip when input already produces NV12 (H264 via VK, or RawVideo{:NV12}) and no scaling
+  defp maybe_plug_swscale_converter_vulkan(
+         builder,
+         input_format,
+         %H264{width: nil, height: nil},
+         _suffix
+       )
+       when is_vk_video_friendly_format(input_format),
+       do: builder
 
   defp maybe_plug_swscale_converter_vulkan(
          builder,
-         %RawVideo{pixel_format: :NV12},
-         %H264{},
-         _suffix
-       ),
-       do: builder
-
-  defp maybe_plug_swscale_converter_vulkan(builder, %RawVideo{}, %H264{}, suffix) do
-    builder |> child(child_name(suffix, :raw_video_converter), %SWScale.Converter{format: :NV12})
+         _input_format,
+         %H264{} = output_format,
+         suffix
+       ) do
+    builder
+    |> child(child_name(suffix, :raw_video_converter), swscale_converter(:NV12, output_format))
   end
 
-  defp maybe_plug_swscale_converter_vulkan(builder, %H264{}, %H264{}, _suffix), do: builder
-
-  defp maybe_plug_swscale_converter_vulkan(builder, %H264{}, _output_format, suffix) do
+  # H264 (VK decoded to NV12) → H265 (FFmpeg encoder needs I420): always convert
+  defp maybe_plug_swscale_converter_vulkan(builder, %H264{}, %H265{} = output_format, suffix) do
     builder
-    |> child(child_name(suffix, :raw_video_converter), %SWScale.Converter{format: :I420})
-  end
-
-  defp maybe_plug_swscale_converter_vulkan(builder, _input_format, %H264{}, suffix) do
-    builder
-    |> child(child_name(suffix, :raw_video_converter), %SWScale.Converter{format: :NV12})
+    |> child(child_name(suffix, :raw_video_converter), swscale_converter(:I420, output_format))
   end
 
   defp maybe_plug_swscale_converter_vulkan(builder, input_format, output_format, suffix),
     do: maybe_plug_swscale_converter(builder, input_format, output_format, suffix)
 
-  defp maybe_plug_swscale_converter(builder, input_format, %RawVideo{} = output_format, suffix) do
-    case input_format do
-      _any when output_format.pixel_format == nil ->
-        builder
+  # RawVideo → RawVideo: skip when no scaling and no pixel format change
+  defp maybe_plug_swscale_converter(
+         builder,
+         input_format,
+         %RawVideo{pixel_format: out_pf, width: nil, height: nil},
+         _suffix
+       )
+       when raw_video_passthrough(input_format, out_pf),
+       do: builder
 
-      %RawVideo{pixel_format: pixel_format} when pixel_format == output_format.pixel_format ->
-        builder
+  defp maybe_plug_swscale_converter(
+         builder,
+         input_format,
+         %RawVideo{pixel_format: pixel_format} = output_format,
+         suffix
+       ) do
+    format = pixel_format || raw_pixel_format(input_format)
 
-      _input_format ->
-        builder
-        |> child(child_name(suffix, :raw_video_converter), %SWScale.Converter{
-          format: output_format.pixel_format
-        })
-    end
+    builder
+    |> child(child_name(suffix, :raw_video_converter), swscale_converter(format, output_format))
   end
 
-  defp maybe_plug_swscale_converter(builder, input_format, %h26x{}, suffix)
+  # → H264/H265: skip when input is already compatible and no scaling
+  defp maybe_plug_swscale_converter(
+         builder,
+         input_format,
+         %h26x{width: nil, height: nil},
+         _suffix
+       )
+       when h26x in [H264, H265] and is_x264_friendly_format(input_format),
+       do: builder
+
+  defp maybe_plug_swscale_converter(builder, _input_format, %h26x{} = output_format, suffix)
        when h26x in [H264, H265] do
-    case input_format do
-      %RawVideo{pixel_format: pixel_format} when pixel_format in [:I420, :I422] ->
-        builder
+    builder
+    |> child(child_name(suffix, :raw_video_converter), swscale_converter(:I420, output_format))
+  end
 
-      %h26x{} when h26x in [H264, H265] ->
-        builder
-
-      _input_format ->
-        builder
-        |> child(child_name(suffix, :raw_video_converter), %SWScale.Converter{format: :I420})
-    end
+  # Catch-all: scale to I420 if resolution requested, otherwise passthrough
+  defp maybe_plug_swscale_converter(
+         builder,
+         _input_format,
+         %{width: w, height: h} = output_format,
+         suffix
+       )
+       when not is_nil(w) and not is_nil(h) do
+    builder
+    |> child(child_name(suffix, :raw_video_converter), swscale_converter(:I420, output_format))
   end
 
   defp maybe_plug_swscale_converter(builder, _input_format, _output_format, _suffix), do: builder
+
+  defp swscale_converter(format, %{width: w, height: h}) when not is_nil(w) and not is_nil(h),
+    do: %SWScale.Converter{format: format, output_width: w, output_height: h}
+
+  defp swscale_converter(format, _output_format), do: %SWScale.Converter{format: format}
+
+  defp raw_pixel_format(%RawVideo{pixel_format: pixel_format}), do: pixel_format || :I420
+  defp raw_pixel_format(_encoded_format), do: :I420
 
   defp maybe_plug_encoder_and_parser_vulkan(builder, %H264{} = h264, output_spec) do
     suffix = output_spec.suffix
@@ -408,6 +485,30 @@ defmodule Membrane.Transcoder.Video do
   end
 
   defp maybe_plug_encoder_and_parser(builder, %RawVideo{}, _output_spec), do: builder
+
+  defp plug_h264_input_parser(builder, suffix),
+    do:
+      child(builder, child_name(suffix, :h264_input_parser), %H264.Parser{
+        output_stream_structure: :annexb,
+        output_alignment: :au
+      })
+
+  defp plug_output_parser(builder, %H264{} = h264, suffix) do
+    # VKVideo.Transcoder outputs annexb/au, so we need a parser if the output format differs
+    output_structure = stream_structure_type(h264)
+    output_alignment = h264.alignment
+
+    # Only add parser if stream structure or alignment needs to be changed
+    if output_structure != :annexb or output_alignment != :au do
+      builder
+      |> child(child_name(suffix, :h264_output_parser), %H264.Parser{
+        output_stream_structure: output_structure,
+        output_alignment: output_alignment
+      })
+    else
+      builder
+    end
+  end
 
   defp stream_structure_type(%h26x{stream_structure: stream_structure})
        when h26x in [H264, H265] do
