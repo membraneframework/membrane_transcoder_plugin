@@ -125,17 +125,18 @@ defmodule Membrane.Transcoder.Audio do
          suffix
        ) do
     builder
-    |> maybe_plug_parser(input_format, suffix)
+    |> maybe_plug_input_parser(input_format, suffix)
     |> maybe_plug_decoder(input_format, suffix)
     |> maybe_plug_resampler(input_format, output_format, suffix)
     |> maybe_plug_encoder(output_format, suffix)
+    |> maybe_plug_output_parser(output_format, suffix)
   end
 
-  defp maybe_plug_parser(builder, %AAC{}, suffix) do
-    builder |> child(child_name(suffix, :aac_parser), AAC.Parser)
+  defp maybe_plug_input_parser(builder, %AAC{}, suffix) do
+    builder |> child(child_name(suffix, :aac_input_parser), AAC.Parser)
   end
 
-  defp maybe_plug_parser(builder, _input_format, _suffix) do
+  defp maybe_plug_input_parser(builder, _input_format, _suffix) do
     builder
   end
 
@@ -212,6 +213,28 @@ defmodule Membrane.Transcoder.Audio do
   end
 
   defp maybe_plug_encoder(builder, %RawAudio{}, _suffix) do
+    builder
+  end
+
+  defp maybe_plug_output_parser(builder, %Opus{} = output_format, suffix) do
+    delimitation = if output_format.self_delimiting?, do: :undelimit, else: :delimit
+
+    builder
+    |> child(child_name(suffix, :opus_output_parser), %Membrane.Opus.Parser{
+      delimitation: delimitation
+    })
+  end
+
+  defp maybe_plug_output_parser(builder, %AAC{} = output_format, suffix) do
+    builder
+    |> child(child_name(suffix, :aac_output_parser), %Membrane.AAC.Parser{
+      output_config: output_format.config,
+      out_encapsulation: output_format.encapsulation,
+      samples_per_frame: output_format.samples_per_frame
+    })
+  end
+
+  defp maybe_plug_output_parser(builder, _output_format, _suffix) do
     builder
   end
 

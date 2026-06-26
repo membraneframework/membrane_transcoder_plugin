@@ -193,20 +193,19 @@ defmodule Membrane.Transcoder.Video do
       })
       |> child(child_name(suffix, :vk_h264_decoder), Membrane.VKVideo.Decoder)
     end
+
+    defp maybe_plug_parser_and_decoder_vulkan(builder, format, output_spec) do
+      maybe_plug_parser_and_decoder(builder, format, output_spec.suffix)
+    end
   end
 
-  if Code.ensure_loaded?(Membrane.VKVideo.Decoder) do
-    defp maybe_plug_parser_and_decoder_vulkan(builder, format, output_spec),
-      do: maybe_plug_parser_and_decoder(builder, format, output_spec.suffix)
-
-    defp maybe_plug_parser_and_decoder(builder, %H264{}, suffix) do
-      builder
-      |> child(child_name(suffix, :h264_input_parser), %H264.Parser{
-        output_stream_structure: :annexb,
-        output_alignment: :au
-      })
-      |> child(child_name(suffix, :h264_decoder), %H264.FFmpeg.Decoder{})
-    end
+  defp maybe_plug_parser_and_decoder(builder, %H264{}, suffix) do
+    builder
+    |> child(child_name(suffix, :h264_input_parser), %H264.Parser{
+      output_stream_structure: :annexb,
+      output_alignment: :au
+    })
+    |> child(child_name(suffix, :h264_decoder), %H264.FFmpeg.Decoder{})
   end
 
   defp maybe_plug_parser_and_decoder(builder, %H265{}, suffix) do
@@ -238,10 +237,7 @@ defmodule Membrane.Transcoder.Video do
   if Code.ensure_loaded?(Membrane.VKVideo.Encoder) do
     defp maybe_plug_swscale_converter_vulkan(builder, input_format, output_format, suffix) do
       case {input_format, output_format} do
-        {%H264{}, %RawVideo{pixel_format: nil}} ->
-          builder
-
-        {%H264{}, %RawVideo{pixel_format: :NV12}} ->
+        {%H264{}, %RawVideo{pixel_format: format}} when format in [nil, :NV12] ->
           builder
 
         {%H264{}, %RawVideo{pixel_format: pixel_format}} ->

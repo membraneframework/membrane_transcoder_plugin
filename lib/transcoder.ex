@@ -86,6 +86,14 @@ defmodule Membrane.Transcoder do
   """
   @type stream_format_resolver :: (stream_format() -> stream_format() | stream_format_module())
 
+  @type transcoding_policy ::
+          :always
+          | :if_needed
+          | :never
+          | (stream_format() -> :always | :if_needed | :never)
+
+  @type native_acceleration :: :never | :if_available
+
   @typedoc """
   Describes bitrate option for video transcoding.
   Can be either a ConstantBitrate or VariableBitrate struct.
@@ -118,19 +126,14 @@ defmodule Membrane.Transcoder do
         """
       ],
       transcoding_policy: [
-        spec:
-          :always
-          | :if_needed
-          | :never
-          | (stream_format() -> :always | :if_needed | :never)
-          | nil,
+        spec: transcoding_policy() | nil,
         default: nil,
         description: """
         Per-output transcoding policy. Inherits from bin's `transcoding_policy` option if nil.
         """
       ],
       native_acceleration: [
-        spec: :never | :if_available | nil,
+        spec: native_acceleration() | nil,
         default: nil,
         description: """
         Per-output native acceleration setting. Inherits from bin's `native_acceleration` option if nil.
@@ -166,11 +169,7 @@ defmodule Membrane.Transcoder do
                 """
               ],
               transcoding_policy: [
-                spec:
-                  :always
-                  | :if_needed
-                  | :never
-                  | (stream_format() -> :always | :if_needed | :never),
+                spec: transcoding_policy(),
                 default: :if_needed,
                 description: """
                 Specifies, when transcoding should be applied.
@@ -209,7 +208,7 @@ defmodule Membrane.Transcoder do
                 """
               ],
               native_acceleration: [
-                spec: :never | :if_available,
+                spec: native_acceleration(),
                 default: :never,
                 description: """
                 Specifies whether to use Vulkan hardware acceleration for video transcoding.
@@ -236,6 +235,22 @@ defmodule Membrane.Transcoder do
                 * VP8/VP9 (libvpx): VBR mode with auto target bitrate
                 """
               ]
+
+  defmodule State do
+    @moduledoc false
+
+    defmodule OutputSpecs do
+      @moduledoc false
+
+      @type t :: %__MODULE__{}
+
+      defstruct []
+    end
+
+    @type t :: %__MODULE__{}
+
+    defstruct []
+  end
 
   @impl true
   def handle_init(_ctx, opts) do
