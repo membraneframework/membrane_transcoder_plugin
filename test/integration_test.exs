@@ -9,6 +9,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
   alias Membrane.Testing
   alias Membrane.Transcoder.Support.Preprocessors
   alias Membrane.Transcoder.Video.{ConstantBitrate, VariableBitrate}
+  alias Membrane.Transcoder.OutputFormat
 
   @video_inputs [
     %{input_format: H264, input_file: "video.h264", preprocess: &Preprocessors.parse_h264/1},
@@ -17,7 +18,15 @@ defmodule Membrane.Transcoder.IntegrationTest do
     %{input_format: VP8, input_file: "video_vp8.ivf", preprocess: &Preprocessors.parse_vpx/1},
     %{input_format: VP9, input_file: "video_vp9.ivf", preprocess: &Preprocessors.parse_vpx/1}
   ]
-  @video_outputs [RawVideo, {RawVideo, pixel_format: :RGB}, H264, H265, VP8, VP9]
+  @video_outputs [
+    OutputFormat.RawVideo,
+    {OutputFormat.RawVideo, pixel_format: :RGB},
+    # Macro.escape(%OutputFormat.RawVideo{pixel_format: :RGB}),
+    OutputFormat.H264,
+    OutputFormat.H265,
+    OutputFormat.VP8,
+    OutputFormat.VP9
+  ]
   @video_cases for input <- @video_inputs,
                    output <- @video_outputs,
                    do: Map.put(input, :output_format, output)
@@ -32,7 +41,12 @@ defmodule Membrane.Transcoder.IntegrationTest do
     %{input_format: Opus, input_file: "audio.opus", preprocess: &Preprocessors.parse_opus/1},
     %{input_format: MPEGAudio, input_file: "audio.mp3", preprocess: &Preprocessors.noop/1}
   ]
-  @audio_outputs [RawAudio, AAC, Opus, MPEGAudio]
+  @audio_outputs [
+    OutputFormat.RawAudio,
+    OutputFormat.AAC,
+    OutputFormat.Opus,
+    OutputFormat.MPEGAudio
+  ]
   @audio_cases for input <- @audio_inputs,
                    output <- @audio_outputs,
                    do: Map.put(input, :output_format, output)
@@ -43,13 +57,26 @@ defmodule Membrane.Transcoder.IntegrationTest do
   # the fixtures, run `REGEN_VK_FIXTURES=1 mix test --include vulkan` once on
   # such a machine and commit the resulting files.
   @vk_video_cases for input <- @video_inputs,
-                      do: Map.put(input, :output_format, H264)
+                      do: Map.put(input, :output_format, OutputFormat.H264)
+
+  @output_format_mapping %{
+    OutputFormat.H264 => Membrane.H264,
+    OutputFormat.H265 => Membrane.H265,
+    OutputFormat.VP8 => Membrane.VP8,
+    OutputFormat.VP9 => Membrane.VP9,
+    OutputFormat.RawVideo => Membrane.RawVideo,
+    OutputFormat.AAC => Membrane.AAC,
+    OutputFormat.Opus => Membrane.Opus,
+    OutputFormat.MPEGAudio => Membrane.MPEGAudio,
+    OutputFormat.RawAudio => Membrane.RawAudio
+  }
 
   @vk_fixtures_dir "./test/fixtures/vk_outputs"
 
   @test_cases @video_cases ++ @audio_cases
 
   Enum.map(@test_cases, fn test_case ->
+    @tag :base
     test "if transcoder supports #{inspect(test_case.input_format)} input and #{inspect(test_case.output_format)} output" do
       pid = Testing.Pipeline.start_link_supervised!()
 
@@ -57,13 +84,19 @@ defmodule Membrane.Transcoder.IntegrationTest do
         if unquote(test_case.input_format) == MPEGAudio,
           do: %Membrane.RemoteStream{content_format: MPEGAudio, type: :packetized}
 
+      {output_stream_format, specified_fields} =
+        case unquote(test_case.output_format) do
+          {module, fields} -> {struct!(module, fields), fields}
+          module -> {struct!(module), []}
+        end
+
       spec =
         child(%Membrane.File.Source{
           location: Path.join("./test/fixtures", unquote(test_case.input_file))
         })
         |> then(unquote(test_case.preprocess))
         |> child(:transcoder, %Membrane.Transcoder{
-          output_stream_format: unquote(test_case.output_format),
+          output_stream_format: output_stream_format,
           assumed_input_stream_format: override_input_stream_format
         })
         |> via_out(Membrane.Pad.ref(:output, 0))
@@ -71,18 +104,14 @@ defmodule Membrane.Transcoder.IntegrationTest do
 
       Testing.Pipeline.execute_actions(pid, spec: spec)
 
-      case unquote(test_case.output_format) do
-        {module, opts} when is_atom(module) ->
-          assert_sink_stream_format(pid, :sink, %^module{} = received_format)
+      assert_sink_stream_format(pid, :sink, received_format)
 
-          for {key, value} <- opts do
-            assert Map.get(received_format, key) == value
-          end
+      assert received_format.__struct__ ==
+               Map.fetch!(@output_format_mapping, output_stream_format.__struct__)
 
-        module when is_atom(module) ->
-          assert_sink_stream_format(pid, :sink, received_format)
-          assert received_format.__struct__ == module
-      end
+      Enum.each(specified_fields, fn {key, value} ->
+        assert Map.get(received_format, key) == value
+      end)
 
       Testing.Pipeline.terminate(pid)
     end
@@ -231,8 +260,8 @@ defmodule Membrane.Transcoder.IntegrationTest do
         transcoding_policy <- [:always, :if_needed, :never] do
       output_format =
         case format do
-          %H264{} = h264 -> %H264{h264 | stream_structure: :avc1}
-          %AAC{} -> format
+          %H264{} -> %OutputFormat.H264{stream_structure: :avc1, alignment: format.alignment}
+          %AAC{} -> OutputFormat.AAC
         end
 
       spec = [
@@ -277,7 +306,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
     spec =
       child(:source, %FormatSource{format: %H264{alignment: :au, stream_structure: :annexb}})
       |> child(:transcoder, %Membrane.Transcoder{
-        output_stream_format: VP8,
+        output_stream_format: OutputFormat.VP8,
         transcoding_policy: :never
       })
       |> via_out(Membrane.Pad.ref(:output, 0))
@@ -302,7 +331,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
       child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
       |> then(&Preprocessors.parse_h264/1)
       |> child(:transcoder, %Membrane.Transcoder{
-        output_stream_format: H264,
+        output_stream_format: OutputFormat.H264,
         transcoding_policy: :always,
         native_acceleration: :never
       }),
@@ -334,10 +363,20 @@ defmodule Membrane.Transcoder.IntegrationTest do
     tmp_dir: tmp_dir
   } do
     ref_h264 =
-      transcode_to_bytes("./test/fixtures/video.h264", &Preprocessors.parse_h264/1, H264, tmp_dir)
+      transcode_to_bytes(
+        "./test/fixtures/video.h264",
+        &Preprocessors.parse_h264/1,
+        OutputFormat.H264,
+        tmp_dir
+      )
 
     ref_h265 =
-      transcode_to_bytes("./test/fixtures/video.h264", &Preprocessors.parse_h264/1, H265, tmp_dir)
+      transcode_to_bytes(
+        "./test/fixtures/video.h264",
+        &Preprocessors.parse_h264/1,
+        OutputFormat.H265,
+        tmp_dir
+      )
 
     pid = Testing.Pipeline.start_link_supervised!()
     h264_tmp = tmp_path(tmp_dir, "mv")
@@ -348,10 +387,10 @@ defmodule Membrane.Transcoder.IntegrationTest do
       |> then(&Preprocessors.parse_h264/1)
       |> child(:transcoder, Membrane.Transcoder),
       get_child(:transcoder)
-      |> via_out(Membrane.Pad.ref(:output, 0), options: [output_stream_format: H264])
+      |> via_out(Membrane.Pad.ref(:output, 0), options: [output_stream_format: OutputFormat.H264])
       |> child(:sink_h264, %Membrane.File.Sink{location: h264_tmp}),
       get_child(:transcoder)
-      |> via_out(Membrane.Pad.ref(:output, 1), options: [output_stream_format: H265])
+      |> via_out(Membrane.Pad.ref(:output, 1), options: [output_stream_format: OutputFormat.H265])
       |> child(:sink_h265, %Membrane.File.Sink{location: h265_tmp})
     ]
 
@@ -372,10 +411,20 @@ defmodule Membrane.Transcoder.IntegrationTest do
   @tag :tmp_dir
   test "multivariant output: two video outputs with different codecs", %{tmp_dir: tmp_dir} do
     ref_h264 =
-      transcode_to_bytes("./test/fixtures/video.h264", &Preprocessors.parse_h264/1, H264, tmp_dir)
+      transcode_to_bytes(
+        "./test/fixtures/video.h264",
+        &Preprocessors.parse_h264/1,
+        OutputFormat.H264,
+        tmp_dir
+      )
 
     ref_vp8 =
-      transcode_to_bytes("./test/fixtures/video.h264", &Preprocessors.parse_h264/1, VP8, tmp_dir)
+      transcode_to_bytes(
+        "./test/fixtures/video.h264",
+        &Preprocessors.parse_h264/1,
+        OutputFormat.VP8,
+        tmp_dir
+      )
 
     pid = Testing.Pipeline.start_link_supervised!()
     h264_tmp = tmp_path(tmp_dir, "mv")
@@ -386,10 +435,10 @@ defmodule Membrane.Transcoder.IntegrationTest do
       |> then(&Preprocessors.parse_h264/1)
       |> child(:transcoder, Membrane.Transcoder),
       get_child(:transcoder)
-      |> via_out(Membrane.Pad.ref(:output, 0), options: [output_stream_format: H264])
+      |> via_out(Membrane.Pad.ref(:output, 0), options: [output_stream_format: OutputFormat.H264])
       |> child(:sink_h264, %Membrane.File.Sink{location: h264_tmp}),
       get_child(:transcoder)
-      |> via_out(Membrane.Pad.ref(:output, 1), options: [output_stream_format: VP8])
+      |> via_out(Membrane.Pad.ref(:output, 1), options: [output_stream_format: OutputFormat.VP8])
       |> child(:sink_vp8, %Membrane.File.Sink{location: vp8_tmp})
     ]
 
@@ -416,7 +465,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
       get_child(:transcoder)
       |> via_out(Membrane.Pad.ref(:output, 0),
         options: [
-          output_stream_format: %H264{alignment: :au, stream_structure: :avc1},
+          output_stream_format: %OutputFormat.H264{alignment: :au, stream_structure: :avc1},
           transcoding_policy: :always
         ]
       )
@@ -424,7 +473,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
       get_child(:transcoder)
       |> via_out(Membrane.Pad.ref(:output, 1),
         options: [
-          output_stream_format: %H264{alignment: :au, stream_structure: :avc1},
+          output_stream_format: %OutputFormat.H264{alignment: :au, stream_structure: :avc1},
           transcoding_policy: :if_needed
         ]
       )
@@ -455,16 +504,26 @@ defmodule Membrane.Transcoder.IntegrationTest do
   @tag :tmp_dir
   test "multivariant output: three audio outputs with different formats", %{tmp_dir: tmp_dir} do
     ref_aac =
-      transcode_to_bytes("./test/fixtures/audio.aac", &Preprocessors.parse_aac/1, AAC, tmp_dir)
+      transcode_to_bytes(
+        "./test/fixtures/audio.aac",
+        &Preprocessors.parse_aac/1,
+        OutputFormat.AAC,
+        tmp_dir
+      )
 
     ref_opus =
-      transcode_to_bytes("./test/fixtures/audio.aac", &Preprocessors.parse_aac/1, Opus, tmp_dir)
+      transcode_to_bytes(
+        "./test/fixtures/audio.aac",
+        &Preprocessors.parse_aac/1,
+        OutputFormat.Opus,
+        tmp_dir
+      )
 
     ref_mp3 =
       transcode_to_bytes(
         "./test/fixtures/audio.aac",
         &Preprocessors.parse_aac/1,
-        MPEGAudio,
+        OutputFormat.MPEGAudio,
         tmp_dir
       )
 
@@ -478,13 +537,15 @@ defmodule Membrane.Transcoder.IntegrationTest do
       |> then(&Preprocessors.parse_aac/1)
       |> child(:transcoder, Membrane.Transcoder),
       get_child(:transcoder)
-      |> via_out(Membrane.Pad.ref(:output, 0), options: [output_stream_format: AAC])
+      |> via_out(Membrane.Pad.ref(:output, 0), options: [output_stream_format: OutputFormat.AAC])
       |> child(:sink_aac, %Membrane.File.Sink{location: aac_tmp}),
       get_child(:transcoder)
-      |> via_out(Membrane.Pad.ref(:output, 1), options: [output_stream_format: Opus])
+      |> via_out(Membrane.Pad.ref(:output, 1), options: [output_stream_format: OutputFormat.Opus])
       |> child(:sink_opus, %Membrane.File.Sink{location: opus_tmp}),
       get_child(:transcoder)
-      |> via_out(Membrane.Pad.ref(:output, 2), options: [output_stream_format: MPEGAudio])
+      |> via_out(Membrane.Pad.ref(:output, 2),
+        options: [output_stream_format: OutputFormat.MPEGAudio]
+      )
       |> child(:sink_mp3, %Membrane.File.Sink{location: mp3_tmp})
     ]
 
@@ -512,12 +573,12 @@ defmodule Membrane.Transcoder.IntegrationTest do
     spec = [
       child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
       |> then(&Preprocessors.parse_h264/1)
-      |> child(:transcoder, %Membrane.Transcoder{output_stream_format: H264}),
+      |> child(:transcoder, %Membrane.Transcoder{output_stream_format: OutputFormat.H264}),
       get_child(:transcoder)
       |> via_out(Membrane.Pad.ref(:output, 0))
       |> child(:sink_default, Testing.Sink),
       get_child(:transcoder)
-      |> via_out(Membrane.Pad.ref(:output, 1), options: [output_stream_format: H265])
+      |> via_out(Membrane.Pad.ref(:output, 1), options: [output_stream_format: OutputFormat.H265])
       |> child(:sink_override, Testing.Sink)
     ]
 
@@ -540,7 +601,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
       child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
       |> then(&Preprocessors.parse_h264/1)
       |> child(:transcoder, %Membrane.Transcoder{
-        output_stream_format: H264,
+        output_stream_format: OutputFormat.H264,
         transcoding_policy: :always,
         native_acceleration: :if_available
       }),
@@ -584,7 +645,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
       transcode_to_bytes_with_bitrate(
         "./test/fixtures/video.h264",
         &Preprocessors.parse_h264/1,
-        H264,
+        OutputFormat.H264,
         low_bitrate,
         :never,
         tmp_dir
@@ -594,7 +655,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
       transcode_to_bytes_with_bitrate(
         "./test/fixtures/video.h264",
         &Preprocessors.parse_h264/1,
-        H264,
+        OutputFormat.H264,
         high_bitrate,
         :never,
         tmp_dir
@@ -632,7 +693,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
       transcode_to_bytes_with_bitrate(
         "./test/fixtures/video.h264",
         &Preprocessors.parse_h264/1,
-        H264,
+        OutputFormat.H264,
         low_bitrate,
         :if_available,
         tmp_dir
@@ -642,7 +703,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
       transcode_to_bytes_with_bitrate(
         "./test/fixtures/video.h264",
         &Preprocessors.parse_h264/1,
-        H264,
+        OutputFormat.H264,
         high_bitrate,
         :if_available,
         tmp_dir
@@ -670,7 +731,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
       transcode_to_bytes_with_bitrate(
         "./test/fixtures/video.h264",
         &Preprocessors.parse_h264/1,
-        H265,
+        OutputFormat.H265,
         bitrate,
         :never,
         tmp_dir
@@ -691,7 +752,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
       transcode_to_bytes_with_bitrate(
         "./test/fixtures/video.h264",
         &Preprocessors.parse_h264/1,
-        H264,
+        OutputFormat.H264,
         bitrate,
         :never,
         tmp_dir
@@ -720,7 +781,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
       child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
       |> then(&Preprocessors.parse_h264/1)
       |> child(:transcoder, %Membrane.Transcoder{
-        output_stream_format: H264,
+        output_stream_format: OutputFormat.H264,
         transcoding_policy: :always,
         native_acceleration: :never
       }),

@@ -47,13 +47,24 @@ defmodule Membrane.Transcoder do
   require Membrane.Logger
   require Membrane.Pad
 
-  alias __MODULE__.{Audio, Video}
-  alias Membrane.{AAC, Funnel, H264, H265, Opus, Pad, RawAudio, RawVideo, RemoteStream, VP8, VP9}
+  alias __MODULE__.{Audio, OutputFormat, Video}
 
-  @typedoc """
-  Describes stream formats acceptable on the bin's input and output.
-  """
-  @type stream_format ::
+  alias Membrane.{
+    AAC,
+    Funnel,
+    H264,
+    H265,
+    MPEGAudio,
+    Opus,
+    Pad,
+    RawAudio,
+    RawVideo,
+    RemoteStream,
+    VP8,
+    VP9
+  }
+
+  @type input_stream_format ::
           H264.t()
           | H265.t()
           | VP8.t()
@@ -61,36 +72,20 @@ defmodule Membrane.Transcoder do
           | RawVideo.t()
           | AAC.t()
           | Opus.t()
-          | Membrane.MPEGAudio.t()
+          | MPEGAudio.t()
           | RemoteStream.t()
           | RawAudio.t()
 
   @typedoc """
-  Describes stream format modules that can be used to define inputs and outputs of the bin.
-  """
-  @type stream_format_module ::
-          H264 | H265 | VP8 | VP9 | RawVideo | AAC | Opus | Membrane.MPEGAudio | RawAudio
-
-  @typedoc """
-  Describes a tuple consisting of a stream format module and its options.
-
-  An alternative to `t:#{inspect(__MODULE__)}.stream_format/0`.
-
-  Allows you to specify some fields of the output stream format, without the need to
-  set all keys required by the struct.
-  """
-  @type stream_format_tuple :: {stream_format_module(), keyword()}
-
-  @typedoc """
   Describes a function which can be used to provide output format based on the input format.
   """
-  @type stream_format_resolver :: (stream_format() -> stream_format() | stream_format_module())
+  @type output_format_resolver :: (input_stream_format() -> OutputFormat.t())
 
   @type transcoding_policy ::
           :always
           | :if_needed
           | :never
-          | (stream_format() -> :always | :if_needed | :never)
+          | (input_stream_format() -> :always | :if_needed | :never)
 
   @type native_acceleration :: :never | :if_available
 
@@ -115,14 +110,17 @@ defmodule Membrane.Transcoder do
     options: [
       output_stream_format: [
         spec:
-          stream_format()
-          | stream_format_module()
-          | stream_format_tuple()
-          | stream_format_resolver()
+          OutputFormat.t()
+          | output_format_resolver()
           | nil,
         default: nil,
         description: """
         Per-output stream format. Inherits from bin's `output_stream_format` option if nil.
+
+        Can be either:
+        * a struct or module defined in OutputFormat module,
+        * a function which receives input stream format as an input argument
+          and returns the desired output format or its module.
         """
       ],
       transcoding_policy: [
@@ -150,20 +148,17 @@ defmodule Membrane.Transcoder do
 
   def_options output_stream_format: [
                 spec:
-                  stream_format()
-                  | stream_format_module()
-                  | stream_format_tuple()
-                  | stream_format_resolver()
+                  OutputFormat.t()
+                  | output_format_resolver()
                   | nil,
                 default: nil,
                 description: """
                 An option specifying the desired output format for all outputs.
 
                 Can be either:
-                * a struct being a Membrane stream format,
-                * a module in which Membrane stream format struct is defined,
+                * a struct or module defined in OutputFormat module,
                 * a function which receives input stream format as an input argument
-                and is supposed to return the desired output stream format or its module.
+                  and returns the desired output format or its module.
 
                 When using per-output `via_out` options, individual outputs can override this value.
                 """
@@ -201,7 +196,7 @@ defmodule Membrane.Transcoder do
                 description: """
                 Allows to override stream format of the input stream.
 
-                Overriding will fail, the stream format sent on the #{inspect(__MODULE__)}'s input
+                Overriding will fail if the stream format sent on the #{inspect(__MODULE__)}'s input
                 pad is not `Membrane.RemoteStream`
 
                 If nil or not set, the input stream format won't be overriden.

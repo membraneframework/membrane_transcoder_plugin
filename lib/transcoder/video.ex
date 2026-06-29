@@ -2,27 +2,50 @@ defmodule Membrane.Transcoder.Video do
   @moduledoc false
 
   import Membrane.ChildrenSpec
-  require Membrane.Logger
-  alias Membrane.{ChildrenSpec, H264, H265, RawVideo, RemoteStream, VP8, VP9}
+  alias Membrane.{ChildrenSpec, RemoteStream}
+  alias Membrane.Transcoder.OutputFormat
   alias Membrane.FFmpeg.SWScale
   alias Membrane.Transcoder.Video.{ConstantBitrate, VariableBitrate}
 
-  @type video_stream_format :: VP8.t() | VP9.t() | H264.t() | H265.t() | RawVideo.t()
+  @type video_input_format ::
+          Membrane.VP8.t()
+          | Membrane.VP9.t()
+          | Membrane.H264.t()
+          | Membrane.H265.t()
+          | Membrane.RawVideo.t()
+
+  @type video_output_format ::
+          OutputFormat.VP8.t()
+          | OutputFormat.VP9.t()
+          | OutputFormat.H264.t()
+          | OutputFormat.H265.t()
+          | OutputFormat.RawVideo.t()
 
   defguardp is_raw_video_format(format)
-            when is_struct(format) and format.__struct__ == RawVideo
+            when is_struct(format) and
+                   format.__struct__ in [Membrane.RawVideo, OutputFormat.RawVideo]
 
   defguardp is_h26x_format(format)
             when is_struct(format) and
-                   (format.__struct__ in [H264, H265] or
+                   (format.__struct__ in [
+                      Membrane.H264,
+                      Membrane.H265,
+                      OutputFormat.H264,
+                      OutputFormat.H265
+                    ] or
                       (format.__struct__ == RemoteStream and
-                         format.content_format in [H264, H265]))
+                         format.content_format in [Membrane.H264, Membrane.H265]))
 
   defguardp is_vpx_format(format)
             when is_struct(format) and
-                   (format.__struct__ in [VP8, VP9] or
+                   (format.__struct__ in [
+                      Membrane.VP8,
+                      Membrane.VP9,
+                      OutputFormat.VP8,
+                      OutputFormat.VP9
+                    ] or
                       (format.__struct__ == RemoteStream and
-                         format.content_format in [VP8, VP9] and
+                         format.content_format in [Membrane.VP8, Membrane.VP9] and
                          format.type == :packetized))
 
   defguard is_video_format(format)
@@ -32,8 +55,8 @@ defmodule Membrane.Transcoder.Video do
 
   @spec plug_video_transcoding(
           ChildrenSpec.builder(),
-          video_stream_format(),
-          video_stream_format(),
+          video_input_format() | RemoteStream.t(),
+          video_output_format(),
           :always | :if_needed | :never,
           boolean(),
           map()
@@ -65,7 +88,7 @@ defmodule Membrane.Transcoder.Video do
          use_hardware_acceleration?,
          output_spec
        )
-       when h26x in [H264, H265] do
+       when h26x in [Membrane.H264, Membrane.H265] do
     do_plug_video_transcoding(
       builder,
       struct!(h26x),
@@ -78,62 +101,46 @@ defmodule Membrane.Transcoder.Video do
 
   defp do_plug_video_transcoding(
          builder,
-         %H264{},
-         %H264{} = output_format,
+         %Membrane.H264{},
+         %OutputFormat.H264{} = output_format,
          transcoding_policy,
          _use_hardware_acceleration?,
          output_spec
        )
        when transcoding_policy in [:if_needed, :never] do
     builder
-    |> child(child_name(output_spec.suffix, :h264_parser), %H264.Parser{
-      output_stream_structure: stream_structure_type(output_format),
+    |> child(child_name(output_spec.suffix, :h264_parser), %Membrane.H264.Parser{
+      output_stream_structure: output_format.stream_structure,
       output_alignment: output_format.alignment
     })
   end
 
   defp do_plug_video_transcoding(
          builder,
-         %H265{},
-         %H265{} = output_format,
+         %Membrane.H265{},
+         %OutputFormat.H265{} = output_format,
          transcoding_policy,
          _use_hardware_acceleration?,
          output_spec
        )
        when transcoding_policy in [:if_needed, :never] do
     builder
-    |> child(child_name(output_spec.suffix, :h265_parser), %H265.Parser{
-      output_stream_structure: stream_structure_type(output_format),
+    |> child(child_name(output_spec.suffix, :h265_parser), %Membrane.H265.Parser{
+      output_stream_structure: output_format.stream_structure,
       output_alignment: output_format.alignment
     })
   end
 
   defp do_plug_video_transcoding(
          builder,
-         %RawVideo{} = input_format,
-         %RawVideo{} = output_format,
+         %Membrane.RawVideo{} = input_format,
+         %OutputFormat.RawVideo{} = output_format,
          _transcoding_policy,
          _use_hardware_acceleration?,
          output_spec
        ) do
     builder
     |> maybe_plug_swscale_converter(input_format, output_format, output_spec.suffix)
-  end
-
-  defp do_plug_video_transcoding(
-         builder,
-         %format_module{},
-         %format_module{},
-         transcoding_policy,
-         _use_hardware_acceleration?,
-         _output_spec
-       )
-       when transcoding_policy in [:if_needed, :never] do
-    Membrane.Logger.debug("""
-    This bin will only forward buffers, as the input stream format is the same type as the output stream format.
-    """)
-
-    builder
   end
 
   defp do_plug_video_transcoding(
@@ -183,11 +190,11 @@ defmodule Membrane.Transcoder.Video do
 
   if Code.ensure_loaded?(Membrane.VKVideo.Decoder) do
     # VK-specific decoder: child name :vk_h264_decoder distinguishes it from FFmpeg's :h264_decoder
-    defp maybe_plug_parser_and_decoder_vulkan(builder, %H264{}, output_spec) do
+    defp maybe_plug_parser_and_decoder_vulkan(builder, %Membrane.H264{}, output_spec) do
       suffix = output_spec.suffix
 
       builder
-      |> child(child_name(suffix, :h264_input_parser), %H264.Parser{
+      |> child(child_name(suffix, :h264_input_parser), %Membrane.H264.Parser{
         output_stream_structure: :annexb,
         output_alignment: :au
       })
@@ -199,25 +206,26 @@ defmodule Membrane.Transcoder.Video do
     end
   end
 
-  defp maybe_plug_parser_and_decoder(builder, %H264{}, suffix) do
+  defp maybe_plug_parser_and_decoder(builder, %Membrane.H264{}, suffix) do
     builder
-    |> child(child_name(suffix, :h264_input_parser), %H264.Parser{
+    |> child(child_name(suffix, :h264_input_parser), %Membrane.H264.Parser{
       output_stream_structure: :annexb,
       output_alignment: :au
     })
-    |> child(child_name(suffix, :h264_decoder), %H264.FFmpeg.Decoder{})
+    |> child(child_name(suffix, :h264_decoder), %Membrane.H264.FFmpeg.Decoder{})
   end
 
-  defp maybe_plug_parser_and_decoder(builder, %H265{}, suffix) do
+  defp maybe_plug_parser_and_decoder(builder, %Membrane.H265{}, suffix) do
     builder
-    |> child(child_name(suffix, :h265_input_parser), %H265.Parser{
+    |> child(child_name(suffix, :h265_input_parser), %Membrane.H265.Parser{
       output_stream_structure: :annexb,
       output_alignment: :au
     })
-    |> child(child_name(suffix, :h265_decoder), %H265.FFmpeg.Decoder{})
+    |> child(child_name(suffix, :h265_decoder), %Membrane.H265.FFmpeg.Decoder{})
   end
 
-  defp maybe_plug_parser_and_decoder(builder, %vpx{}, suffix) when vpx in [VP8, VP9] do
+  defp maybe_plug_parser_and_decoder(builder, %vpx{}, suffix)
+       when vpx in [Membrane.VP8, Membrane.VP9] do
     decoder_module = Module.concat(vpx, Decoder)
     builder |> child(child_name(suffix, :vp8_decoder), decoder_module)
   end
@@ -227,40 +235,41 @@ defmodule Membrane.Transcoder.Video do
          %RemoteStream{content_format: vpx, type: :packetized},
          suffix
        )
-       when vpx in [VP8, VP9] do
+       when vpx in [Membrane.VP8, Membrane.VP9] do
     decoder_module = Module.concat(vpx, Decoder)
     builder |> child(child_name(suffix, :vp8_decoder), decoder_module)
   end
 
-  defp maybe_plug_parser_and_decoder(builder, %RawVideo{}, _suffix), do: builder
+  defp maybe_plug_parser_and_decoder(builder, %Membrane.RawVideo{}, _suffix), do: builder
 
   if Code.ensure_loaded?(Membrane.VKVideo.Encoder) do
     defp maybe_plug_swscale_converter_vulkan(builder, input_format, output_format, suffix) do
       case {input_format, output_format} do
-        {%H264{}, %RawVideo{pixel_format: format}} when format in [nil, :NV12] ->
+        {%Membrane.H264{}, %OutputFormat.RawVideo{pixel_format: format}}
+        when format in [nil, :NV12] ->
           builder
 
-        {%H264{}, %RawVideo{pixel_format: pixel_format}} ->
+        {%Membrane.H264{}, %OutputFormat.RawVideo{pixel_format: pixel_format}} ->
           builder
           |> child(child_name(suffix, :raw_video_converter), %SWScale.Converter{
             format: pixel_format
           })
 
-        {%RawVideo{pixel_format: :NV12}, %H264{}} ->
+        {%Membrane.RawVideo{pixel_format: :NV12}, %OutputFormat.H264{}} ->
           builder
 
-        {%RawVideo{}, %H264{}} ->
+        {%Membrane.RawVideo{}, %OutputFormat.H264{}} ->
           builder
           |> child(child_name(suffix, :raw_video_converter), %SWScale.Converter{format: :NV12})
 
-        {%H264{}, %H264{}} ->
+        {%Membrane.H264{}, %OutputFormat.H264{}} ->
           builder
 
-        {%H264{}, _output_format} ->
+        {%Membrane.H264{}, _output_format} ->
           builder
           |> child(child_name(suffix, :raw_video_converter), %SWScale.Converter{format: :I420})
 
-        {_input_format, %H264{}} ->
+        {_input_format, %OutputFormat.H264{}} ->
           builder
           |> child(child_name(suffix, :raw_video_converter), %SWScale.Converter{format: :NV12})
 
@@ -270,12 +279,18 @@ defmodule Membrane.Transcoder.Video do
     end
   end
 
-  defp maybe_plug_swscale_converter(builder, input_format, %RawVideo{} = output_format, suffix) do
+  defp maybe_plug_swscale_converter(
+         builder,
+         input_format,
+         %OutputFormat.RawVideo{} = output_format,
+         suffix
+       ) do
     case input_format do
-      _any when output_format.pixel_format == nil ->
+      _any when output_format.pixel_format == :any ->
         builder
 
-      %RawVideo{pixel_format: pixel_format} when pixel_format == output_format.pixel_format ->
+      %Membrane.RawVideo{pixel_format: pixel_format}
+      when pixel_format == output_format.pixel_format ->
         builder
 
       _input_format ->
@@ -287,12 +302,12 @@ defmodule Membrane.Transcoder.Video do
   end
 
   defp maybe_plug_swscale_converter(builder, input_format, %h26x{}, suffix)
-       when h26x in [H264, H265] do
+       when h26x in [OutputFormat.H264, OutputFormat.H265] do
     case input_format do
-      %RawVideo{pixel_format: pixel_format} when pixel_format in [:I420, :I422] ->
+      %Membrane.RawVideo{pixel_format: pixel_format} when pixel_format in [:I420, :I422] ->
         builder
 
-      %h26x{} when h26x in [H264, H265] ->
+      %h26x{} when h26x in [Membrane.H264, Membrane.H265] ->
         builder
 
       _input_format ->
@@ -304,7 +319,7 @@ defmodule Membrane.Transcoder.Video do
   defp maybe_plug_swscale_converter(builder, _input_format, _output_format, _suffix), do: builder
 
   if Code.ensure_loaded?(Membrane.VKVideo.Encoder) do
-    defp maybe_plug_encoder_and_parser_vulkan(builder, %H264{} = h264, output_spec) do
+    defp maybe_plug_encoder_and_parser_vulkan(builder, %OutputFormat.H264{} = h264, output_spec) do
       suffix = output_spec.suffix
       bitrate = output_spec.bitrate
       rate_control = get_vkvideo_rate_control(bitrate)
@@ -313,8 +328,8 @@ defmodule Membrane.Transcoder.Video do
       |> child(child_name(suffix, :vk_h264_encoder), %Membrane.VKVideo.Encoder{
         rate_control: rate_control
       })
-      |> child(child_name(suffix, :h264_output_parser), %H264.Parser{
-        output_stream_structure: stream_structure_type(h264),
+      |> child(child_name(suffix, :h264_output_parser), %Membrane.H264.Parser{
+        output_stream_structure: h264.stream_structure,
         output_alignment: h264.alignment
       })
     end
@@ -323,12 +338,12 @@ defmodule Membrane.Transcoder.Video do
       do: maybe_plug_encoder_and_parser(builder, format, output_spec)
   end
 
-  defp maybe_plug_encoder_and_parser(builder, %H264{} = h264, output_spec) do
+  defp maybe_plug_encoder_and_parser(builder, %OutputFormat.H264{} = h264, output_spec) do
     suffix = output_spec.suffix
     bitrate = output_spec.bitrate
     ffmpeg_params = get_h264_ffmpeg_params(bitrate)
 
-    encoder_params = %H264.FFmpeg.Encoder{
+    encoder_params = %Membrane.H264.FFmpeg.Encoder{
       preset: :ultrafast,
       ffmpeg_params: ffmpeg_params
     }
@@ -341,63 +356,55 @@ defmodule Membrane.Transcoder.Video do
 
     builder
     |> child(child_name(suffix, :h264_encoder), encoder_params)
-    |> child(child_name(suffix, :h264_output_parser), %H264.Parser{
-      output_stream_structure: stream_structure_type(h264),
+    |> child(child_name(suffix, :h264_output_parser), %Membrane.H264.Parser{
+      output_stream_structure: h264.stream_structure,
       output_alignment: h264.alignment
     })
   end
 
-  defp maybe_plug_encoder_and_parser(builder, %H265{} = h265, output_spec) do
+  defp maybe_plug_encoder_and_parser(builder, %OutputFormat.H265{} = h265, output_spec) do
     suffix = output_spec.suffix
     bitrate = output_spec.bitrate
     x265_params = get_h265_x265_params(bitrate)
 
     builder
-    |> child(child_name(suffix, :h265_encoder), %H265.FFmpeg.Encoder{
+    |> child(child_name(suffix, :h265_encoder), %Membrane.H265.FFmpeg.Encoder{
       preset: :ultrafast,
       x265_params: x265_params
     })
-    |> child(child_name(suffix, :h265_output_parser), %H265.Parser{
-      output_stream_structure: stream_structure_type(h265),
+    |> child(child_name(suffix, :h265_output_parser), %Membrane.H265.Parser{
+      output_stream_structure: h265.stream_structure,
       output_alignment: h265.alignment
     })
   end
 
-  defp maybe_plug_encoder_and_parser(builder, %VP8{}, output_spec) do
+  defp maybe_plug_encoder_and_parser(builder, %OutputFormat.VP8{}, output_spec) do
     suffix = output_spec.suffix
     bitrate = output_spec.bitrate
     target_bitrate = get_vpx_target_bitrate(bitrate)
 
     builder
-    |> child(child_name(suffix, :vp8_encoder), %VP8.Encoder{
+    |> child(child_name(suffix, :vp8_encoder), %Membrane.VP8.Encoder{
       g_threads: cpu_count(),
       cpu_used: 15,
       rc_target_bitrate: target_bitrate
     })
   end
 
-  defp maybe_plug_encoder_and_parser(builder, %VP9{}, output_spec) do
+  defp maybe_plug_encoder_and_parser(builder, %OutputFormat.VP9{}, output_spec) do
     suffix = output_spec.suffix
     bitrate = output_spec.bitrate
     target_bitrate = get_vpx_target_bitrate(bitrate)
 
     builder
-    |> child(child_name(suffix, :vp9_encoder), %VP9.Encoder{
+    |> child(child_name(suffix, :vp9_encoder), %Membrane.VP9.Encoder{
       g_threads: cpu_count(),
       cpu_used: 15,
       rc_target_bitrate: target_bitrate
     })
   end
 
-  defp maybe_plug_encoder_and_parser(builder, %RawVideo{}, _output_spec), do: builder
-
-  defp stream_structure_type(%h26x{stream_structure: stream_structure})
-       when h26x in [H264, H265] do
-    case stream_structure do
-      type when type in [:annexb, :avc1, :avc3, :hvc1, :hev1] -> type
-      {type, _dcr} when type in [:avc1, :avc3, :hvc1, :hev1] -> type
-    end
-  end
+  defp maybe_plug_encoder_and_parser(builder, %OutputFormat.RawVideo{}, _output_spec), do: builder
 
   if Code.ensure_loaded?(Membrane.VKVideo.Encoder) do
     defp get_vkvideo_rate_control(nil), do: :encoder_default
