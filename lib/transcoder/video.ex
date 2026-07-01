@@ -2,7 +2,7 @@ defmodule Membrane.Transcoder.Video do
   @moduledoc false
 
   import Membrane.ChildrenSpec
-  alias Membrane.{ChildrenSpec, RemoteStream}
+  alias Membrane.{ChildrenSpec, RemoteStream, Transcoder}
   alias Membrane.FFmpeg.SWScale
   alias Membrane.Transcoder.OutputFormat
   alias Membrane.Transcoder.Video.{ConstantBitrate, VariableBitrate}
@@ -66,7 +66,7 @@ defmodule Membrane.Transcoder.Video do
           video_output_format(),
           :always | :if_needed | :never,
           boolean(),
-          map()
+          Transcoder.State.OutputSpec.t()
         ) :: ChildrenSpec.builder()
   def plug_video_transcoding(
         builder,

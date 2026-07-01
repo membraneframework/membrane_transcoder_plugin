@@ -96,7 +96,6 @@ defmodule Membrane.Transcoder do
   @type bitrate_option ::
           Membrane.Transcoder.Video.ConstantBitrate.t()
           | Membrane.Transcoder.Video.VariableBitrate.t()
-          | nil
 
   def_input_pad :input,
     accepted_format:
@@ -138,7 +137,7 @@ defmodule Membrane.Transcoder do
         """
       ],
       bitrate: [
-        spec: bitrate_option(),
+        spec: bitrate_option() | nil,
         default: nil,
         description: """
         Per-output bitrate setting for video streams. Inherits from bin's `bitrate` option if nil.
@@ -191,7 +190,7 @@ defmodule Membrane.Transcoder do
                 """
               ],
               assumed_input_stream_format: [
-                spec: struct() | nil,
+                spec: input_stream_format() | nil,
                 default: nil,
                 description: """
                 Allows to override stream format of the input stream.
@@ -234,17 +233,61 @@ defmodule Membrane.Transcoder do
   defmodule State do
     @moduledoc false
 
-    defmodule OutputSpecs do
+    alias Membrane.Transcoder
+
+    defmodule OutputSpec do
       @moduledoc false
 
-      @type t :: %__MODULE__{}
+      @type pad_id() :: term()
 
-      defstruct []
+      @type t :: %__MODULE__{
+              output_stream_format:
+                Transcoder.OutputFormat.t()
+                | Transcoder.output_format_resolver()
+                | nil,
+              transcoding_policy: Transcoder.transcoding_policy() | nil,
+              native_acceleration: Transcoder.native_acceleration() | nil,
+              bitrate: Transcoder.bitrate_option() | nil,
+              pad_id: pad_id(),
+              suffix: {pad_id(), :output},
+              funnel_name: {:funnel, {pad_id(), :output}}
+            }
+
+      @enforce_keys [
+        :output_stream_format,
+        :transcoding_policy,
+        :native_acceleration,
+        :bitrate,
+        :pad_id,
+        :suffix,
+        :funnel_name
+      ]
+
+      defstruct @enforce_keys
     end
 
-    @type t :: %__MODULE__{}
+    @type t :: %__MODULE__{
+            output_stream_format:
+              Transcoder.OutputFormat.t()
+              | Transcoder.output_format_resolver()
+              | nil,
+            transcoding_policy: Transcoder.transcoding_policy() | nil,
+            assumed_input_stream_format: Transcoder.input_stream_format() | nil,
+            native_acceleration: Transcoder.native_acceleration() | nil,
+            bitrate: Transcoder.bitrate_option() | nil,
+            input_stream_format: Transcoder.input_stream_format() | nil,
+            output_specs: %{Pad.ref() => OutputSpec.t()}
+          }
 
-    defstruct []
+    @enforce_keys [
+      :output_stream_format,
+      :transcoding_policy,
+      :assumed_input_stream_format,
+      :native_acceleration,
+      :bitrate
+    ]
+
+    defstruct @enforce_keys ++ [input_stream_format: nil, output_specs: %{}]
   end
 
   @impl true
@@ -254,13 +297,7 @@ defmodule Membrane.Transcoder do
       |> maybe_plug_stream_format_changer(opts.assumed_input_stream_format)
       |> child(:connector, %Membrane.Connector{notify_on_stream_format?: true})
 
-    state =
-      opts
-      |> Map.from_struct()
-      |> Map.merge(%{
-        input_stream_format: nil,
-        output_specs: %{}
-      })
+    state = struct!(State, Map.from_struct(opts))
 
     {[spec: spec], state}
   end
@@ -293,13 +330,13 @@ defmodule Membrane.Transcoder do
   end
 
   @impl true
-  def handle_pad_added(Pad.ref(:output, pad_id) = pad_ref, ctx, state) do
+  def handle_pad_added(Pad.ref(:output, pad_id) = pad_ref, ctx, %State{} = state) do
     pad_opts = ctx.pads[pad_ref].options
 
     suffix = {pad_id, :output}
     funnel_name = {:funnel, suffix}
 
-    output_spec = %{
+    output_spec = %State.OutputSpec{
       output_stream_format: pad_opts.output_stream_format || state.output_stream_format,
       transcoding_policy: pad_opts.transcoding_policy || state.transcoding_policy,
       native_acceleration: pad_opts.native_acceleration || state.native_acceleration,
@@ -311,18 +348,24 @@ defmodule Membrane.Transcoder do
 
     spec = child(funnel_name, Funnel) |> bin_output(pad_ref)
 
-    {[spec: spec], %{state | output_specs: Map.put(state.output_specs, pad_ref, output_spec)}}
+    {[spec: spec],
+     %State{state | output_specs: Map.put(state.output_specs, pad_ref, output_spec)}}
   end
 
   @impl true
-  def handle_pad_removed(Pad.ref(:output, _id) = pad_ref, _ctx, state) do
-    {[], %{state | output_specs: Map.delete(state.output_specs, pad_ref)}}
+  def handle_pad_removed(Pad.ref(:output, _id) = pad_ref, _ctx, %State{} = state) do
+    {[], %State{state | output_specs: Map.delete(state.output_specs, pad_ref)}}
   end
 
   @impl true
-  def handle_child_notification({:stream_format, _pad, format}, :connector, _ctx, state)
+  def handle_child_notification(
+        {:stream_format, _pad, format},
+        :connector,
+        _ctx,
+        %State{} = state
+      )
       when state.input_stream_format == nil do
-    state = %{state | input_stream_format: format}
+    state = %State{state | input_stream_format: format}
 
     output_specs_list = Map.to_list(state.output_specs)
     single_output? = length(output_specs_list) == 1

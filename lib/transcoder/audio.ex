@@ -2,7 +2,7 @@ defmodule Membrane.Transcoder.Audio do
   @moduledoc false
 
   import Membrane.ChildrenSpec
-  alias Membrane.{ChildrenSpec, RemoteStream}
+  alias Membrane.{ChildrenSpec, RemoteStream, Transcoder}
   alias Membrane.Transcoder.OutputFormat
 
   @aac_sample_rates [
@@ -79,7 +79,7 @@ defmodule Membrane.Transcoder.Audio do
           audio_input_format() | Membrane.RemoteStream.t(),
           audio_output_format(),
           :always | :if_needed | :never,
-          map()
+          Transcoder.State.OutputSpec.t()
         ) :: ChildrenSpec.builder()
   def plug_audio_transcoding(
         builder,
@@ -254,7 +254,6 @@ defmodule Membrane.Transcoder.Audio do
     builder
   end
 
-  @spec get_opus_delimitation(OutputFormat.Opus.t()) :: Membrane.Opus.Parser.delimitation_t()
   defp get_opus_delimitation(output_format) do
     if output_format.self_delimiting?, do: :undelimit, else: :delimit
   end
