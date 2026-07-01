@@ -7,9 +7,9 @@ defmodule Membrane.Transcoder.IntegrationTest do
 
   alias Membrane.{AAC, H264, H265, MPEGAudio, Opus, RawAudio, RawVideo, VP8, VP9}
   alias Membrane.Testing
+  alias Membrane.Transcoder.OutputFormat
   alias Membrane.Transcoder.Support.Preprocessors
   alias Membrane.Transcoder.Video.{ConstantBitrate, VariableBitrate}
-  alias Membrane.Transcoder.OutputFormat
 
   @video_inputs [
     %{input_format: H264, input_file: "video.h264", preprocess: &Preprocessors.parse_h264/1},
@@ -21,7 +21,6 @@ defmodule Membrane.Transcoder.IntegrationTest do
   @video_outputs [
     OutputFormat.RawVideo,
     {OutputFormat.RawVideo, pixel_format: :RGB},
-    # Macro.escape(%OutputFormat.RawVideo{pixel_format: :RGB}),
     OutputFormat.H264,
     OutputFormat.H265,
     OutputFormat.VP8,

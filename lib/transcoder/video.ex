@@ -3,8 +3,8 @@ defmodule Membrane.Transcoder.Video do
 
   import Membrane.ChildrenSpec
   alias Membrane.{ChildrenSpec, RemoteStream}
-  alias Membrane.Transcoder.OutputFormat
   alias Membrane.FFmpeg.SWScale
+  alias Membrane.Transcoder.OutputFormat
   alias Membrane.Transcoder.Video.{ConstantBitrate, VariableBitrate}
 
   @type video_input_format ::
@@ -13,6 +13,7 @@ defmodule Membrane.Transcoder.Video do
           | Membrane.H264.t()
           | Membrane.H265.t()
           | Membrane.RawVideo.t()
+          | RemoteStream.t()
 
   @type video_output_format ::
           OutputFormat.VP8.t()
@@ -189,7 +190,6 @@ defmodule Membrane.Transcoder.Video do
   end
 
   if Code.ensure_loaded?(Membrane.VKVideo.Decoder) do
-    # VK-specific decoder: child name :vk_h264_decoder distinguishes it from FFmpeg's :h264_decoder
     defp maybe_plug_parser_and_decoder_vulkan(builder, %Membrane.H264{}, output_spec) do
       suffix = output_spec.suffix
 
