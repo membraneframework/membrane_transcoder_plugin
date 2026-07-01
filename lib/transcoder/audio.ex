@@ -25,7 +25,7 @@ defmodule Membrane.Transcoder.Audio do
           | Membrane.Opus.t()
           | Membrane.MPEGAudio.t()
           | Membrane.RawAudio.t()
-          | RemoteStream.t()
+          | %RemoteStream{content_format: Membrane.AAC | Membrane.Opus | Membrane.MPEGAudio}
 
   @type audio_output_format ::
           OutputFormat.AAC.t()

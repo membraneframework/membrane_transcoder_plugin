@@ -13,7 +13,13 @@ defmodule Membrane.Transcoder.Video do
           | Membrane.H264.t()
           | Membrane.H265.t()
           | Membrane.RawVideo.t()
-          | RemoteStream.t()
+          | %RemoteStream{
+              content_format:
+                Membrane.VP8
+                | Membrane.VP9
+                | Membrane.H264
+                | Membrane.H265
+            }
 
   @type video_output_format ::
           OutputFormat.VP8.t()
