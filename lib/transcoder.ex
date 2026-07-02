@@ -47,13 +47,24 @@ defmodule Membrane.Transcoder do
   require Membrane.Logger
   require Membrane.Pad
 
-  alias __MODULE__.{Audio, Video}
-  alias Membrane.{AAC, Funnel, H264, H265, Opus, Pad, RawAudio, RawVideo, RemoteStream, VP8, VP9}
+  alias __MODULE__.{Audio, OutputFormat, Video}
 
-  @typedoc """
-  Describes stream formats acceptable on the bin's input and output.
-  """
-  @type stream_format ::
+  alias Membrane.{
+    AAC,
+    Funnel,
+    H264,
+    H265,
+    MPEGAudio,
+    Opus,
+    Pad,
+    RawAudio,
+    RawVideo,
+    RemoteStream,
+    VP8,
+    VP9
+  }
+
+  @type input_stream_format ::
           H264.t()
           | H265.t()
           | VP8.t()
@@ -61,30 +72,22 @@ defmodule Membrane.Transcoder do
           | RawVideo.t()
           | AAC.t()
           | Opus.t()
-          | Membrane.MPEGAudio.t()
+          | MPEGAudio.t()
           | RemoteStream.t()
           | RawAudio.t()
 
   @typedoc """
-  Describes stream format modules that can be used to define inputs and outputs of the bin.
-  """
-  @type stream_format_module ::
-          H264 | H265 | VP8 | VP9 | RawVideo | AAC | Opus | Membrane.MPEGAudio | RawAudio
-
-  @typedoc """
-  Describes a tuple consisting of a stream format module and its options.
-
-  An alternative to `t:#{inspect(__MODULE__)}.stream_format/0`.
-
-  Allows you to specify some fields of the output stream format, without the need to
-  set all keys required by the struct.
-  """
-  @type stream_format_tuple :: {stream_format_module(), keyword()}
-
-  @typedoc """
   Describes a function which can be used to provide output format based on the input format.
   """
-  @type stream_format_resolver :: (stream_format() -> stream_format() | stream_format_module())
+  @type output_format_resolver :: (input_stream_format() -> OutputFormat.t())
+
+  @type transcoding_policy ::
+          :always
+          | :if_needed
+          | :never
+          | (input_stream_format() -> :always | :if_needed | :never)
+
+  @type native_acceleration :: :never | :if_available
 
   @typedoc """
   Describes bitrate option for video transcoding.
@@ -93,7 +96,6 @@ defmodule Membrane.Transcoder do
   @type bitrate_option ::
           Membrane.Transcoder.Video.ConstantBitrate.t()
           | Membrane.Transcoder.Video.VariableBitrate.t()
-          | nil
 
   def_input_pad :input,
     accepted_format:
@@ -107,37 +109,35 @@ defmodule Membrane.Transcoder do
     options: [
       output_stream_format: [
         spec:
-          stream_format()
-          | stream_format_module()
-          | stream_format_tuple()
-          | stream_format_resolver()
+          OutputFormat.t()
+          | output_format_resolver()
           | nil,
         default: nil,
         description: """
         Per-output stream format. Inherits from bin's `output_stream_format` option if nil.
+
+        Can be either:
+        * a struct or module defined in OutputFormat module,
+        * a function which receives input stream format as an input argument
+          and returns the desired output format or its module.
         """
       ],
       transcoding_policy: [
-        spec:
-          :always
-          | :if_needed
-          | :never
-          | (stream_format() -> :always | :if_needed | :never)
-          | nil,
+        spec: transcoding_policy() | nil,
         default: nil,
         description: """
         Per-output transcoding policy. Inherits from bin's `transcoding_policy` option if nil.
         """
       ],
       native_acceleration: [
-        spec: :never | :if_available | nil,
+        spec: native_acceleration() | nil,
         default: nil,
         description: """
         Per-output native acceleration setting. Inherits from bin's `native_acceleration` option if nil.
         """
       ],
       bitrate: [
-        spec: bitrate_option(),
+        spec: bitrate_option() | nil,
         default: nil,
         description: """
         Per-output bitrate setting for video streams. Inherits from bin's `bitrate` option if nil.
@@ -147,30 +147,23 @@ defmodule Membrane.Transcoder do
 
   def_options output_stream_format: [
                 spec:
-                  stream_format()
-                  | stream_format_module()
-                  | stream_format_tuple()
-                  | stream_format_resolver()
+                  OutputFormat.t()
+                  | output_format_resolver()
                   | nil,
                 default: nil,
                 description: """
                 An option specifying the desired output format for all outputs.
 
                 Can be either:
-                * a struct being a Membrane stream format,
-                * a module in which Membrane stream format struct is defined,
+                * a struct or module defined in OutputFormat module,
                 * a function which receives input stream format as an input argument
-                and is supposed to return the desired output stream format or its module.
+                  and returns the desired output format or its module.
 
                 When using per-output `via_out` options, individual outputs can override this value.
                 """
               ],
               transcoding_policy: [
-                spec:
-                  :always
-                  | :if_needed
-                  | :never
-                  | (stream_format() -> :always | :if_needed | :never),
+                spec: transcoding_policy(),
                 default: :if_needed,
                 description: """
                 Specifies, when transcoding should be applied.
@@ -197,19 +190,19 @@ defmodule Membrane.Transcoder do
                 """
               ],
               assumed_input_stream_format: [
-                spec: struct() | nil,
+                spec: input_stream_format() | nil,
                 default: nil,
                 description: """
                 Allows to override stream format of the input stream.
 
-                Overriding will fail, the stream format sent on the #{inspect(__MODULE__)}'s input
+                Overriding will fail if the stream format sent on the #{inspect(__MODULE__)}'s input
                 pad is not `Membrane.RemoteStream`
 
                 If nil or not set, the input stream format won't be overriden.
                 """
               ],
               native_acceleration: [
-                spec: :never | :if_available,
+                spec: native_acceleration(),
                 default: :never,
                 description: """
                 Specifies whether to use Vulkan hardware acceleration for video transcoding.
@@ -237,6 +230,66 @@ defmodule Membrane.Transcoder do
                 """
               ]
 
+  defmodule State do
+    @moduledoc false
+
+    alias Membrane.Transcoder
+
+    defmodule OutputSpec do
+      @moduledoc false
+
+      @type pad_id() :: term()
+
+      @type t :: %__MODULE__{
+              output_stream_format:
+                Transcoder.OutputFormat.t()
+                | Transcoder.output_format_resolver()
+                | nil,
+              transcoding_policy: Transcoder.transcoding_policy() | nil,
+              native_acceleration: Transcoder.native_acceleration() | nil,
+              bitrate: Transcoder.bitrate_option() | nil,
+              pad_id: pad_id(),
+              suffix: {pad_id(), :output},
+              funnel_name: {:funnel, {pad_id(), :output}}
+            }
+
+      @enforce_keys [
+        :output_stream_format,
+        :transcoding_policy,
+        :native_acceleration,
+        :bitrate,
+        :pad_id,
+        :suffix,
+        :funnel_name
+      ]
+
+      defstruct @enforce_keys
+    end
+
+    @type t :: %__MODULE__{
+            output_stream_format:
+              Transcoder.OutputFormat.t()
+              | Transcoder.output_format_resolver()
+              | nil,
+            transcoding_policy: Transcoder.transcoding_policy() | nil,
+            assumed_input_stream_format: Transcoder.input_stream_format() | nil,
+            native_acceleration: Transcoder.native_acceleration() | nil,
+            bitrate: Transcoder.bitrate_option() | nil,
+            input_stream_format: Transcoder.input_stream_format() | nil,
+            output_specs: %{Pad.ref() => OutputSpec.t()}
+          }
+
+    @enforce_keys [
+      :output_stream_format,
+      :transcoding_policy,
+      :assumed_input_stream_format,
+      :native_acceleration,
+      :bitrate
+    ]
+
+    defstruct @enforce_keys ++ [input_stream_format: nil, output_specs: %{}]
+  end
+
   @impl true
   def handle_init(_ctx, opts) do
     spec =
@@ -244,13 +297,7 @@ defmodule Membrane.Transcoder do
       |> maybe_plug_stream_format_changer(opts.assumed_input_stream_format)
       |> child(:connector, %Membrane.Connector{notify_on_stream_format?: true})
 
-    state =
-      opts
-      |> Map.from_struct()
-      |> Map.merge(%{
-        input_stream_format: nil,
-        output_specs: %{}
-      })
+    state = struct!(State, Map.from_struct(opts))
 
     {[spec: spec], state}
   end
@@ -283,13 +330,13 @@ defmodule Membrane.Transcoder do
   end
 
   @impl true
-  def handle_pad_added(Pad.ref(:output, pad_id) = pad_ref, ctx, state) do
+  def handle_pad_added(Pad.ref(:output, pad_id) = pad_ref, ctx, %State{} = state) do
     pad_opts = ctx.pads[pad_ref].options
 
     suffix = {pad_id, :output}
     funnel_name = {:funnel, suffix}
 
-    output_spec = %{
+    output_spec = %State.OutputSpec{
       output_stream_format: pad_opts.output_stream_format || state.output_stream_format,
       transcoding_policy: pad_opts.transcoding_policy || state.transcoding_policy,
       native_acceleration: pad_opts.native_acceleration || state.native_acceleration,
@@ -301,18 +348,24 @@ defmodule Membrane.Transcoder do
 
     spec = child(funnel_name, Funnel) |> bin_output(pad_ref)
 
-    {[spec: spec], %{state | output_specs: Map.put(state.output_specs, pad_ref, output_spec)}}
+    {[spec: spec],
+     %State{state | output_specs: Map.put(state.output_specs, pad_ref, output_spec)}}
   end
 
   @impl true
-  def handle_pad_removed(Pad.ref(:output, _id) = pad_ref, _ctx, state) do
-    {[], %{state | output_specs: Map.delete(state.output_specs, pad_ref)}}
+  def handle_pad_removed(Pad.ref(:output, _id) = pad_ref, _ctx, %State{} = state) do
+    {[], %State{state | output_specs: Map.delete(state.output_specs, pad_ref)}}
   end
 
   @impl true
-  def handle_child_notification({:stream_format, _pad, format}, :connector, _ctx, state)
+  def handle_child_notification(
+        {:stream_format, _pad, format},
+        :connector,
+        _ctx,
+        %State{} = state
+      )
       when state.input_stream_format == nil do
-    state = %{state | input_stream_format: format}
+    state = %State{state | input_stream_format: format}
 
     output_specs_list = Map.to_list(state.output_specs)
     single_output? = length(output_specs_list) == 1
