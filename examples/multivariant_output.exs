@@ -4,8 +4,7 @@ Mix.install([
 ])
 
 defmodule Example do
-  alias Membrane.{H264, RCPipeline}
-  alias Membrane.Transcoder.OutputFormat
+  alias Membrane.{H264, RCPipeline, Transcoder}
   require RCPipeline
   require Membrane.Pad
 
@@ -30,13 +29,16 @@ defmodule Example do
         output_alignment: :au,
         generate_best_effort_timestamps: %{framerate: {30, 1}}
       })
-      |> child(:transcoder, Membrane.Transcoder),
+      |> child(:transcoder, Transcoder),
 
       # Output 0 — keep H264, just repackage (no re-encode)
       get_child(:transcoder)
       |> via_out(Membrane.Pad.ref(:output, 0),
         options: [
-          output_stream_format: %OutputFormat.H264{alignment: :au, stream_structure: :annexb},
+          output_stream_format: %Transcoder.OutputFormat.H264{
+            alignment: :au,
+            stream_structure: :annexb
+          },
           transcoding_policy: :if_needed
         ]
       )
@@ -46,7 +48,7 @@ defmodule Example do
       get_child(:transcoder)
       |> via_out(Membrane.Pad.ref(:output, 1),
         options: [
-          output_stream_format: OutputFormat.H265,
+          output_stream_format: Transcoder.OutputFormat.H265,
           transcoding_policy: :always
         ]
       )
@@ -56,7 +58,7 @@ defmodule Example do
       get_child(:transcoder)
       |> via_out(Membrane.Pad.ref(:output, 2),
         options: [
-          output_stream_format: OutputFormat.VP8,
+          output_stream_format: Transcoder.OutputFormat.VP8,
           transcoding_policy: :always
         ]
       )

@@ -76,7 +76,7 @@ defmodule Membrane.Transcoder.Audio do
 
   @spec plug_audio_transcoding(
           ChildrenSpec.builder(),
-          audio_input_format() | Membrane.RemoteStream.t(),
+          audio_input_format(),
           audio_output_format(),
           :always | :if_needed | :never,
           Transcoder.State.OutputSpec.t()
@@ -144,19 +144,18 @@ defmodule Membrane.Transcoder.Audio do
     builder |> child(child_name(suffix, :aac_input_parser), Membrane.AAC.Parser)
   end
 
+  defp maybe_plug_input_parser(builder, format, suffix) when is_opus_format(format) do
+    builder
+    |> child(child_name(suffix, :opus_input_parser), %Membrane.Opus.Parser{
+      delimitation: :undelimit
+    })
+  end
+
   defp maybe_plug_input_parser(builder, _input_format, _suffix) do
     builder
   end
 
   defp maybe_plug_decoder(builder, %Membrane.Opus{}, suffix) do
-    builder |> child(child_name(suffix, :opus_decoder), Membrane.Opus.Decoder)
-  end
-
-  defp maybe_plug_decoder(
-         builder,
-         %RemoteStream{content_format: Membrane.Opus, type: :packetized},
-         suffix
-       ) do
     builder |> child(child_name(suffix, :opus_decoder), Membrane.Opus.Decoder)
   end
 
@@ -233,11 +232,9 @@ defmodule Membrane.Transcoder.Audio do
   end
 
   defp maybe_plug_output_parser(builder, %OutputFormat.Opus{} = output_format, suffix) do
-    delimitation = if output_format.self_delimiting?, do: :undelimit, else: :delimit
-
     builder
     |> child(child_name(suffix, :opus_output_parser), %Membrane.Opus.Parser{
-      delimitation: delimitation
+      delimitation: get_opus_delimitation(output_format)
     })
   end
 

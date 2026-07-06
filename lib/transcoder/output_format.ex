@@ -78,6 +78,10 @@ defmodule Membrane.Transcoder.OutputFormat do
     Struct defining the desired output RawVideo stream format.
     """
 
+    @typedoc """
+    If `:pixel_format` is set to `:any` then the Transcoder will be free to choose any pixel format
+    for the output stream and the subsequent component must be able to handle it.
+    """
     @type t :: %__MODULE__{pixel_format: Membrane.RawVideo.pixel_format() | :any}
     defstruct pixel_format: :any
   end

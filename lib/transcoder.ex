@@ -495,4 +495,30 @@ defmodule Membrane.Transcoder do
       output_spec
     )
   end
+
+  defp plug_transcoding(
+         _builder,
+         input_format,
+         _output_format,
+         _transcoding_policy,
+         _use_hardware_acceleration?,
+         _output_spec
+       ) do
+    case input_format do
+      %RemoteStream{content_format: nil} ->
+        raise """
+        Stream format #{inspect(input_format)} doesn't have enough information to be recognized, please set
+        the `:assumed_input_stream_format` option to a stream format with information about it's
+        the content format (e.g. `%RemoteStream{content_format: Membrane.H264}` if the stream is
+        H264) or provide a stream format with sufficient information.
+        """
+
+      _other ->
+        raise """
+        Didn't recognize stream format #{inspect(input_format)}, check the `Membrane.Transcoder` moduledoc to
+        see the list of supported formats. You may also set the `:assumed_input_stream_format` option with a
+        stream format you want the transcoder to assume.
+        """
+    end
+  end
 end
