@@ -20,6 +20,10 @@ defmodule Membrane.Transcoder.Audio do
     8000
   ]
 
+  @aac_channels 1..8
+
+  @opus_channels 1..2
+
   @type audio_input_format ::
           Membrane.AAC.t()
           | Membrane.Opus.t()
@@ -62,12 +66,14 @@ defmodule Membrane.Transcoder.Audio do
                   is_mpeg_audio_format(format)
 
   defguard is_opus_compliant(format)
-           when is_map_key(format, :content_type) and format.content_type == :s16le and
-                  is_map_key(format, :sample_rate) and format.sample_rate == 48_000
+           when is_map_key(format, :sample_format) and format.sample_format == :s16le and
+                  is_map_key(format, :sample_rate) and format.sample_rate == 48_000 and
+                  is_map_key(format, :channels) and format.channels in @opus_channels
 
   defguard is_aac_compliant(format)
-           when is_map_key(format, :content_type) and format.content_type == :s16le and
-                  is_map_key(format, :sample_rate) and format.sample_rate in @aac_sample_rates
+           when is_map_key(format, :sample_format) and format.sample_format == :s16le and
+                  is_map_key(format, :sample_rate) and format.sample_rate in @aac_sample_rates and
+                  is_map_key(format, :channels) and format.channels in @aac_channels
 
   defguard is_mp3_compliant(format)
            when is_map_key(format, :sample_rate) and format.sample_rate == 44_100 and
@@ -177,24 +183,42 @@ defmodule Membrane.Transcoder.Audio do
 
   defp maybe_plug_resampler(builder, input_format, %OutputFormat.Opus{}, suffix)
        when not is_opus_compliant(input_format) do
+    channels =
+      case input_format do
+        %{channels: channels} when channels in @opus_channels -> channels
+        _other -> 1
+      end
+
     builder
     |> child(child_name(suffix, :resampler), %Membrane.FFmpeg.SWResample.Converter{
       output_stream_format: %Membrane.RawAudio{
         sample_format: :s16le,
         sample_rate: 48_000,
-        channels: 1
+        channels: channels
       }
     })
   end
 
   defp maybe_plug_resampler(builder, input_format, %OutputFormat.AAC{}, suffix)
        when not is_aac_compliant(input_format) do
+    sample_rate =
+      case input_format do
+        %{sample_rate: sample_rate} when sample_rate in @aac_sample_rates -> sample_rate
+        _other -> 44_100
+      end
+
+    channels =
+      case input_format do
+        %{channels: channels} when channels in @aac_channels -> channels
+        _other -> 1
+      end
+
     builder
     |> child(child_name(suffix, :resampler), %Membrane.FFmpeg.SWResample.Converter{
       output_stream_format: %Membrane.RawAudio{
         sample_format: :s16le,
-        sample_rate: 44_100,
-        channels: 1
+        sample_rate: sample_rate,
+        channels: channels
       }
     })
   end
