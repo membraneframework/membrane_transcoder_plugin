@@ -33,44 +33,74 @@ defmodule Membrane.Transcoder.OutputFormat do
     @moduledoc """
     Struct defining the desired output H264 stream format.
     """
+
+    @typedoc """
+    If a field is set to `:any` then the Transcoder will be free to choose any valid value
+    for the output stream and the subsequent component must be able to handle it.
+    """
     @type t :: %__MODULE__{
             alignment: :au | :nalu,
             stream_structure:
-              :annexb | :avc1 | :avc3 | {:avc1 | :avc3, nalu_length_size :: pos_integer()}
+              :annexb | :avc1 | :avc3 | {:avc1 | :avc3, nalu_length_size :: pos_integer()},
+            width: Membrane.H264.width() | :any,
+            height: Membrane.H264.width() | :any
           }
 
-    defstruct alignment: :au, stream_structure: :annexb
+    defstruct alignment: :au, stream_structure: :annexb, width: :any, height: :any
   end
 
   defmodule H265 do
     @moduledoc """
     Struct defining the desired output H265 stream format.
     """
+
+    @typedoc """
+    If a field is set to `:any` then the Transcoder will be free to choose any valid value
+    for the output stream and the subsequent component must be able to handle it.
+    """
     @type t :: %__MODULE__{
             alignment: :au | :nalu,
             stream_structure:
-              :annexb | :hev1 | :hvc1 | {:hev1 | :hvc1, nalu_length_size :: pos_integer()}
+              :annexb | :hev1 | :hvc1 | {:hev1 | :hvc1, nalu_length_size :: pos_integer()},
+            width: Membrane.H264.width() | :any,
+            height: Membrane.H264.width() | :any
           }
 
-    defstruct alignment: :au, stream_structure: :annexb
+    defstruct alignment: :au, stream_structure: :annexb, width: :any, height: :any
   end
 
   defmodule VP8 do
     @moduledoc """
     Struct defining the desired output VP8 stream format.
     """
-    @type t :: %__MODULE__{}
 
-    defstruct []
+    @typedoc """
+    If a field is set to `:any` then the Transcoder will be free to choose any valid value
+    for the output stream and the subsequent component must be able to handle it.
+    """
+    @type t :: %__MODULE__{
+            width: Membrane.VP8.width() | :any,
+            height: Membrane.VP8.width() | :any
+          }
+
+    defstruct width: :any, height: :any
   end
 
   defmodule VP9 do
     @moduledoc """
     Struct defining the desired output VP9 stream format.
     """
-    @type t :: %__MODULE__{}
 
-    defstruct []
+    @typedoc """
+    If a field is set to `:any` then the Transcoder will be free to choose any valid value
+    for the output stream and the subsequent component must be able to handle it.
+    """
+    @type t :: %__MODULE__{
+            width: Membrane.VP9.width() | :any,
+            height: Membrane.VP9.width() | :any
+          }
+
+    defstruct width: :any, height: :any
   end
 
   defmodule RawVideo do
@@ -79,11 +109,15 @@ defmodule Membrane.Transcoder.OutputFormat do
     """
 
     @typedoc """
-    If `:pixel_format` is set to `:any` then the Transcoder will be free to choose any pixel format
+    If a field is set to `:any` then the Transcoder will be free to choose any valid value
     for the output stream and the subsequent component must be able to handle it.
     """
-    @type t :: %__MODULE__{pixel_format: Membrane.RawVideo.pixel_format() | :any}
-    defstruct pixel_format: :any
+    @type t :: %__MODULE__{
+            pixel_format: Membrane.RawVideo.pixel_format() | :any,
+            width: Membrane.RawVideo.width() | :any,
+            height: Membrane.RawVideo.width() | :any
+          }
+    defstruct pixel_format: :any, width: :any, height: :any
   end
 
   defmodule AAC do

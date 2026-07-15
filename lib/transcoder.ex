@@ -34,10 +34,10 @@ defmodule Membrane.Transcoder do
 
       child(:transcoder, Membrane.Transcoder),
       get_child(:transcoder)
-      |> via_out(Pad.ref(:output, 0), options: [output_stream_format: H264, transcoding_policy: :if_needed])
+      |> via_out(Pad.ref(:output, 0), options: [output_stream_format: H264])
       |> child(:h264_sink, Membrane.File.Sink),
       get_child(:transcoder)
-      |> via_out(Pad.ref(:output, 1), options: [output_stream_format: H265, transcoding_policy: :always])
+      |> via_out(Pad.ref(:output, 1), options: [output_stream_format: H265])
       |> child(:h265_sink, Membrane.File.Sink)
   """
   use Membrane.Bin
@@ -97,6 +97,11 @@ defmodule Membrane.Transcoder do
           Membrane.Transcoder.Video.ConstantBitrate.t()
           | Membrane.Transcoder.Video.VariableBitrate.t()
 
+  @typedoc """
+  Describes video resolution as a tuple of width and height in pixels.
+  """
+  @type resolution :: {pos_integer(), pos_integer()} | nil
+
   def_input_pad :input,
     accepted_format:
       format
@@ -122,75 +127,25 @@ defmodule Membrane.Transcoder do
           and returns the desired output format or its module.
         """
       ],
-      transcoding_policy: [
-        spec: transcoding_policy() | nil,
-        default: nil,
-        description: """
-        Per-output transcoding policy. Inherits from bin's `transcoding_policy` option if nil.
-        """
-      ],
-      native_acceleration: [
-        spec: native_acceleration() | nil,
-        default: nil,
-        description: """
-        Per-output native acceleration setting. Inherits from bin's `native_acceleration` option if nil.
-        """
-      ],
       bitrate: [
         spec: bitrate_option() | nil,
         default: nil,
         description: """
         Per-output bitrate setting for video streams. Inherits from bin's `bitrate` option if nil.
         """
+      ],
+      resolution: [
+        spec: resolution(),
+        default: nil,
+        description: """
+        Per-output video resolution `{width, height}`. Overrides `width` and `height` on the resolved
+        output stream format.
+        """
       ]
     ]
 
-  def_options output_stream_format: [
-                spec:
-                  OutputFormat.t()
-                  | output_format_resolver()
-                  | nil,
-                default: nil,
-                description: """
-                An option specifying the desired output format for all outputs.
-
-                Can be either:
-                * a struct or module defined in OutputFormat module,
-                * a function which receives input stream format as an input argument
-                  and returns the desired output format or its module.
-
-                When using per-output `via_out` options, individual outputs can override this value.
-                """
-              ],
-              transcoding_policy: [
-                spec: transcoding_policy(),
-                default: :if_needed,
-                description: """
-                Specifies, when transcoding should be applied.
-
-                Can be either:
-                * an atom: `:always`, `:if_needed` (default) or `:never`,
-                * a function that receives the input stream format and returns either `:always`,
-                  `:if_needed` or `:never`.
-
-                If set to `:always`, the input media stream will be decoded and encoded, even
-                if the input stream format and the output stream format are the same type.
-
-                If set to `:if_needed`, the input media stream will be transcoded only if the input
-                stream format and the output stream format are different types.
-                This is the default behavior.
-
-                If set to `:never`, the input media stream won't be neither decoded nor encoded.
-                Changing alignment, encapsulation or stream structure is still possible. This option
-                is helpful when you want to ensure that #{inspect(__MODULE__)} will not use too much
-                of resources, e.g. CPU or memory.
-
-                If the transition from the input stream format to the output stream format is not
-                possible without decoding or encoding the stream, an error will be raised.
-                """
-              ],
-              assumed_input_stream_format: [
-                spec: input_stream_format() | nil,
+  def_options assumed_input_stream_format: [
+                spec: struct() | nil,
                 default: nil,
                 description: """
                 Allows to override stream format of the input stream.
@@ -212,21 +167,31 @@ defmodule Membrane.Transcoder do
                 * `:if_available` - Use Vulkan acceleration when available on the system
                 """
               ],
-              bitrate: [
-                spec: bitrate_option(),
-                default: nil,
+              transcoding_policy: [
+                spec: transcoding_policy(),
+                default: :if_needed,
                 description: """
-                Per-output bitrate setting for video streams.
+                Specifies when transcoding should be applied.
 
                 Can be either:
-                * a `Membrane.Transcoder.Video.ConstantBitrate` struct for constant bitrate encoding
-                * a `Membrane.Transcoder.Video.VariableBitrate` struct for variable bitrate encoding
-                * nil (default) - use encoder defaults
+                * an atom: `:always`, `:if_needed` (default) or `:never`,
+                * a function that receives the input stream format and returns either `:always`,
+                  `:if_needed` or `:never`.
 
-                When nil, the underlying encoders use their default rate control:
-                * H264 (libx264): CRF 23, preset :medium
-                * H265 (libx265): CRF 28, preset :medium
-                * VP8/VP9 (libvpx): VBR mode with auto target bitrate
+                If set to `:always`, the input media stream will be decoded and encoded, even
+                if the input stream format and the output stream format are the same type.
+
+                If set to `:if_needed`, the input media stream will be transcoded only if the input
+                stream format and the output stream format are different types.
+                This is the default behavior.
+
+                If set to `:never`, the input media stream won't be neither decoded nor encoded.
+                Changing alignment, encapsulation or stream structure is still possible. This option
+                is helpful when you want to ensure that #{inspect(__MODULE__)} will not use too much
+                of resources, e.g. CPU or memory.
+
+                If the transition from the input stream format to the output stream format is not
+                possible without decoding or encoding the stream, an error will be raised.
                 """
               ]
 
@@ -248,6 +213,7 @@ defmodule Membrane.Transcoder do
               transcoding_policy: Transcoder.transcoding_policy() | nil,
               native_acceleration: Transcoder.native_acceleration() | nil,
               bitrate: Transcoder.bitrate_option() | nil,
+              resolution: Transcoder.resolution() | nil,
               pad_id: pad_id(),
               suffix: {pad_id(), :output},
               funnel_name: {:funnel, {pad_id(), :output}}
@@ -258,6 +224,7 @@ defmodule Membrane.Transcoder do
         :transcoding_policy,
         :native_acceleration,
         :bitrate,
+        :resolution,
         :pad_id,
         :suffix,
         :funnel_name
@@ -267,24 +234,17 @@ defmodule Membrane.Transcoder do
     end
 
     @type t :: %__MODULE__{
-            output_stream_format:
-              Transcoder.OutputFormat.t()
-              | Transcoder.output_format_resolver()
-              | nil,
             transcoding_policy: Transcoder.transcoding_policy() | nil,
             assumed_input_stream_format: Transcoder.input_stream_format() | nil,
             native_acceleration: Transcoder.native_acceleration() | nil,
-            bitrate: Transcoder.bitrate_option() | nil,
             input_stream_format: Transcoder.input_stream_format() | nil,
             output_specs: %{Pad.ref() => OutputSpec.t()}
           }
 
     @enforce_keys [
-      :output_stream_format,
       :transcoding_policy,
       :assumed_input_stream_format,
-      :native_acceleration,
-      :bitrate
+      :native_acceleration
     ]
 
     defstruct @enforce_keys ++ [input_stream_format: nil, output_specs: %{}]
@@ -337,10 +297,11 @@ defmodule Membrane.Transcoder do
     funnel_name = {:funnel, suffix}
 
     output_spec = %State.OutputSpec{
-      output_stream_format: pad_opts.output_stream_format || state.output_stream_format,
-      transcoding_policy: pad_opts.transcoding_policy || state.transcoding_policy,
-      native_acceleration: pad_opts.native_acceleration || state.native_acceleration,
-      bitrate: pad_opts.bitrate || state.bitrate,
+      output_stream_format: pad_opts.output_stream_format,
+      transcoding_policy: state.transcoding_policy,
+      native_acceleration: state.native_acceleration,
+      bitrate: pad_opts.bitrate,
+      resolution: pad_opts.resolution,
       funnel_name: funnel_name,
       suffix: suffix,
       pad_id: pad_id
@@ -374,7 +335,11 @@ defmodule Membrane.Transcoder do
       if single_output? do
         [{_pad_ref, output_spec}] = output_specs_list
         use_hw? = should_use_hardware_acceleration?(output_spec.native_acceleration)
-        resolved_format = resolve_output_stream_format(output_spec.output_stream_format, format)
+
+        resolved_format =
+          output_spec.output_stream_format
+          |> resolve_output_stream_format(format)
+          |> apply_resolution(output_spec.resolution)
 
         transcoding_policy = resolve_transcoding_policy(output_spec.transcoding_policy, format)
 
@@ -399,7 +364,9 @@ defmodule Membrane.Transcoder do
             use_hw? = should_use_hardware_acceleration?(output_spec.native_acceleration)
 
             resolved_format =
-              resolve_output_stream_format(output_spec.output_stream_format, format)
+              output_spec.output_stream_format
+              |> resolve_output_stream_format(format)
+              |> apply_resolution(output_spec.resolution)
 
             transcoding_policy =
               resolve_transcoding_policy(output_spec.transcoding_policy, format)
@@ -446,7 +413,20 @@ defmodule Membrane.Transcoder do
   defp resolve_transcoding_policy(f, format) when is_function(f), do: f.(format)
   defp resolve_transcoding_policy(policy, _format), do: policy
 
-  defp resolve_output_stream_format(nil, input_format), do: input_format
+  @spec apply_resolution(Video.video_output_format(), resolution()) :: Video.video_output_format()
+  defp apply_resolution(%{width: _width, height: _height} = format, {width, height}),
+    do: %{format | width: width, height: height}
+
+  defp apply_resolution(format, nil), do: format
+
+  defp apply_resolution(format, {_width, _height}), do: format
+
+  defp resolve_output_stream_format(nil, input_format) do
+    case input_format do
+      %{width: _width, height: _height} -> %{input_format | width: nil, height: nil}
+      _input_format -> input_format
+    end
+  end
 
   defp resolve_output_stream_format(output_stream_format, input_format) do
     case output_stream_format do

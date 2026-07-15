@@ -29,7 +29,7 @@ defmodule Example do
         output_alignment: :au,
         generate_best_effort_timestamps: %{framerate: {30, 1}}
       })
-      |> child(:transcoder, Transcoder),
+      |> child(:transcoder, %Transcoder{transcoding_policy: :if_needed}),
 
       # Output 0 — keep H264, just repackage (no re-encode)
       get_child(:transcoder)
@@ -39,7 +39,7 @@ defmodule Example do
             alignment: :au,
             stream_structure: :annexb
           },
-          transcoding_policy: :if_needed
+          resolution: {320, 160}
         ]
       )
       |> child(:h264_sink, %Membrane.File.Sink{location: h264_output_file}),
@@ -48,8 +48,7 @@ defmodule Example do
       get_child(:transcoder)
       |> via_out(Membrane.Pad.ref(:output, 1),
         options: [
-          output_stream_format: Transcoder.OutputFormat.H265,
-          transcoding_policy: :always
+          output_stream_format: Transcoder.OutputFormat.H265
         ]
       )
       |> child(:h265_sink, %Membrane.File.Sink{location: h265_output_file}),
@@ -58,8 +57,7 @@ defmodule Example do
       get_child(:transcoder)
       |> via_out(Membrane.Pad.ref(:output, 2),
         options: [
-          output_stream_format: Transcoder.OutputFormat.VP8,
-          transcoding_policy: :always
+          output_stream_format: Transcoder.OutputFormat.VP8
         ]
       )
       |> child(:vp8_sink, %Membrane.File.Sink{location: vp8_output_file})
