@@ -413,7 +413,7 @@ defmodule Membrane.Transcoder do
   defp resolve_transcoding_policy(f, format) when is_function(f), do: f.(format)
   defp resolve_transcoding_policy(policy, _format), do: policy
 
-  @spec apply_resolution(Video.video_output_format(), resolution()) :: Video.video_output_format()
+  @spec apply_resolution(OutputFormat.t(), resolution()) :: OutputFormat.t()
   defp apply_resolution(%{width: _width, height: _height} = format, {width, height}),
     do: %{format | width: width, height: height}
 
