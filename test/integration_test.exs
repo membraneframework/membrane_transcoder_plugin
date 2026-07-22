@@ -58,18 +58,6 @@ defmodule Membrane.Transcoder.IntegrationTest do
   @vk_video_cases for input <- @video_inputs,
                       do: Map.put(input, :output_format, OutputFormat.H264)
 
-  @output_format_mapping %{
-    OutputFormat.H264 => Membrane.H264,
-    OutputFormat.H265 => Membrane.H265,
-    OutputFormat.VP8 => Membrane.VP8,
-    OutputFormat.VP9 => Membrane.VP9,
-    OutputFormat.RawVideo => Membrane.RawVideo,
-    OutputFormat.AAC => Membrane.AAC,
-    OutputFormat.Opus => Membrane.Opus,
-    OutputFormat.MPEGAudio => Membrane.MPEGAudio,
-    OutputFormat.RawAudio => Membrane.RawAudio
-  }
-
   @vk_fixtures_dir "./test/fixtures/vk_outputs"
   @scaled_fixtures_dir "./test/fixtures/scaled_outputs"
 
@@ -79,37 +67,41 @@ defmodule Membrane.Transcoder.IntegrationTest do
       input_format: H264,
       input_file: "video.h264",
       preprocess: &Preprocessors.parse_h264/1,
-      output_format: %OutputFormat.H264{width: 160, height: 90},
+      output_format: OutputFormat.H264,
+      resolution: %{width: 160, height: 90},
       label: "h264_to_h264",
       ext: "h264",
-      resolution: "160x90"
+      resolution_str: "160x90"
     },
     %{
       input_format: H264,
       input_file: "video.h264",
       preprocess: &Preprocessors.parse_h264/1,
-      output_format: {OutputFormat.RawVideo, [width: 160, height: 90]},
+      output_format: OutputFormat.RawVideo,
+      resolution: %{width: 160, height: 90},
       label: "h264_to_rawvideo",
       ext: "yuv",
-      resolution: "160x90"
+      resolution_str: "160x90"
     },
     %{
       input_format: RawVideo,
       input_file: "video.h264",
       preprocess: &Preprocessors.decode_h264/1,
-      output_format: %OutputFormat.H264{width: 160, height: 90},
+      output_format: OutputFormat.H264,
+      resolution: %{width: 160, height: 90},
       label: "rawvideo_to_h264",
       ext: "h264",
-      resolution: "160x90"
+      resolution_str: "160x90"
     },
     %{
       input_format: RawVideo,
       input_file: "video.h264",
       preprocess: &Preprocessors.decode_h264/1,
-      output_format: {OutputFormat.RawVideo, [width: 160, height: 90]},
+      output_format: OutputFormat.RawVideo,
+      resolution: %{width: 160, height: 90},
       label: "rawvideo_to_rawvideo",
       ext: "yuv",
-      resolution: "160x90"
+      resolution_str: "160x90"
     }
   ]
 
@@ -118,10 +110,11 @@ defmodule Membrane.Transcoder.IntegrationTest do
       input_format: H264,
       input_file: "video.h264",
       preprocess: &Preprocessors.parse_h264/1,
-      output_format: %H264{width: 160, height: 90},
+      output_format: OutputFormat.H264,
+      resolution: %{width: 160, height: 90},
       label: "h264_to_h264",
       ext: "h264",
-      resolution: "160x90"
+      resolution_str: "160x90"
     }
   ]
 
@@ -150,7 +143,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
           assumed_input_stream_format: override_input_stream_format
         })
         |> via_out(Membrane.Pad.ref(:output, 0),
-          options: [output_stream_format: unquote(test_case.output_format)]
+          options: [output_stream_format: output_stream_format]
         )
         |> child(:sink, Testing.Sink)
 
@@ -158,8 +151,8 @@ defmodule Membrane.Transcoder.IntegrationTest do
 
       assert_sink_stream_format(pid, :sink, received_format)
 
-      assert received_format.__struct__ ==
-               Map.fetch!(@output_format_mapping, output_stream_format.__struct__)
+      assert received_format.__struct__ |> Module.split() |> List.last() ==
+               output_stream_format.__struct__ |> Module.split() |> List.last()
 
       Enum.each(specified_fields, fn {key, value} ->
         assert Map.get(received_format, key) == value
@@ -221,7 +214,10 @@ defmodule Membrane.Transcoder.IntegrationTest do
         native_acceleration: native_acceleration
       })
       |> via_out(Membrane.Pad.ref(:output, 0),
-        options: [output_stream_format: test_case.output_format]
+        options: [
+          output_stream_format: test_case.output_format,
+          resolution: Map.get(test_case, :resolution, :keep)
+        ]
       )
       |> child(:sink, %Membrane.File.Sink{location: tmp_path})
 
@@ -601,7 +597,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
       fixture_path =
         Path.join(
           @scaled_fixtures_dir,
-          "sw_#{unquote(test_case.label)}_#{unquote(test_case.resolution)}.#{unquote(test_case.ext)}"
+          "sw_#{unquote(test_case.label)}_#{unquote(test_case.resolution_str)}.#{unquote(test_case.ext)}"
         )
 
       actual = run_transcoder_to_file(unquote(Macro.escape(test_case)), :never, tmp_dir)
@@ -621,7 +617,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
       fixture_path =
         Path.join(
           @scaled_fixtures_dir,
-          "vk_#{unquote(test_case.label)}_#{unquote(test_case.resolution)}.#{unquote(test_case.ext)}"
+          "vk_#{unquote(test_case.label)}_#{unquote(test_case.resolution_str)}.#{unquote(test_case.ext)}"
         )
 
       actual = run_transcoder_to_file(unquote(Macro.escape(test_case)), :if_available, tmp_dir)
@@ -630,52 +626,6 @@ defmodule Membrane.Transcoder.IntegrationTest do
       assert_or_regenerate_scaled_fixture!(actual, fixture_path)
     end
   end)
-
-  test "output format width/height drives RawVideo output dimensions" do
-    pid = Testing.Pipeline.start_link_supervised!()
-
-    spec =
-      child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
-      |> then(&Preprocessors.parse_h264/1)
-      |> child(:transcoder, %Membrane.Transcoder{})
-      |> via_out(Membrane.Pad.ref(:output, 0),
-        options: [output_stream_format: {OutputFormat.RawVideo, [width: 160, height: 90]}]
-      )
-      |> child(:sink, Testing.Sink)
-
-    Testing.Pipeline.execute_actions(pid, spec: spec)
-
-    assert_sink_stream_format(pid, :sink, %RawVideo{width: 160, height: 90}, 10_000)
-
-    Testing.Pipeline.terminate(pid)
-  end
-
-  test "per-output format with resolution overrides bin-level format" do
-    pid = Testing.Pipeline.start_link_supervised!()
-
-    spec = [
-      child(%Membrane.File.Source{location: "./test/fixtures/video.h264"})
-      |> then(&Preprocessors.parse_h264/1)
-      |> child(:transcoder, %Membrane.Transcoder{}),
-      get_child(:transcoder)
-      |> via_out(Membrane.Pad.ref(:output, 0),
-        options: [output_stream_format: {OutputFormat.RawVideo, [width: 320, height: 180]}]
-      )
-      |> child(:sink_default, Testing.Sink),
-      get_child(:transcoder)
-      |> via_out(Membrane.Pad.ref(:output, 1),
-        options: [output_stream_format: {OutputFormat.RawVideo, [width: 160, height: 90]}]
-      )
-      |> child(:sink_scaled, Testing.Sink)
-    ]
-
-    Testing.Pipeline.execute_actions(pid, spec: spec)
-
-    assert_sink_stream_format(pid, :sink_default, %RawVideo{width: 320, height: 180}, 10_000)
-    assert_sink_stream_format(pid, :sink_scaled, %RawVideo{width: 160, height: 90}, 10_000)
-
-    Testing.Pipeline.terminate(pid)
-  end
 
   test "resolution pad option scales video independently of output_stream_format" do
     pid = Testing.Pipeline.start_link_supervised!()
@@ -691,7 +641,10 @@ defmodule Membrane.Transcoder.IntegrationTest do
       |> child(:sink_default, Testing.Sink),
       get_child(:transcoder)
       |> via_out(Membrane.Pad.ref(:output, 1),
-        options: [output_stream_format: OutputFormat.RawVideo, resolution: {160, 90}]
+        options: [
+          output_stream_format: OutputFormat.RawVideo,
+          resolution: %{width: 160, height: 90}
+        ]
       )
       |> child(:sink_scaled, Testing.Sink)
     ]
@@ -704,7 +657,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
     Testing.Pipeline.terminate(pid)
   end
 
-  test "bin-level resolution applies to all outputs without per-pad override" do
+  test "resolution pad option scales a single video output" do
     pid = Testing.Pipeline.start_link_supervised!()
 
     spec =
@@ -712,7 +665,10 @@ defmodule Membrane.Transcoder.IntegrationTest do
       |> then(&Preprocessors.parse_h264/1)
       |> child(:transcoder, %Membrane.Transcoder{})
       |> via_out(Membrane.Pad.ref(:output, 0),
-        options: [output_stream_format: OutputFormat.RawVideo, resolution: {160, 90}]
+        options: [
+          output_stream_format: OutputFormat.RawVideo,
+          resolution: %{width: 160, height: 90}
+        ]
       )
       |> child(:sink, Testing.Sink)
 

@@ -85,7 +85,6 @@ defmodule Membrane.Transcoder do
           :always
           | :if_needed
           | :never
-          | (input_stream_format() -> :always | :if_needed | :never)
 
   @type native_acceleration :: :never | :if_available
 
@@ -97,10 +96,7 @@ defmodule Membrane.Transcoder do
           Membrane.Transcoder.Video.ConstantBitrate.t()
           | Membrane.Transcoder.Video.VariableBitrate.t()
 
-  @typedoc """
-  Describes video resolution as a tuple of width and height in pixels.
-  """
-  @type resolution :: {pos_integer(), pos_integer()} | nil
+  @type resolution :: %{width: pos_integer(), height: pos_integer()}
 
   def_input_pad :input,
     accepted_format:
@@ -116,30 +112,42 @@ defmodule Membrane.Transcoder do
         spec:
           OutputFormat.t()
           | output_format_resolver()
-          | nil,
-        default: nil,
+          | :keep,
+        default: :keep,
         description: """
-        Per-output stream format. Inherits from bin's `output_stream_format` option if nil.
+        Definition of the desired output stream format for this pad.
 
         Can be either:
         * a struct or module defined in OutputFormat module,
         * a function which receives input stream format as an input argument
           and returns the desired output format or its module.
+        * `:keep` to not change the input stream format - useful if `:bitrate` or `:resolution`
+          option are set to specific values.
         """
       ],
       bitrate: [
-        spec: bitrate_option() | nil,
-        default: nil,
+        spec: bitrate_option() | :default,
+        default: :default,
         description: """
-        Per-output bitrate setting for video streams. Inherits from bin's `bitrate` option if nil.
+        Per-output bitrate setting for video streams.
+
+        Can be either:
+        * a `Membrane.Transcoder.Video.ConstantBitrate` struct for constant bitrate encoding
+        * a `Membrane.Transcoder.Video.VariableBitrate` struct for variable bitrate encoding
+        * `:default` - use encoder defaults
+
+        When nil, the underlying encoders use their default rate control:
+        * H264 (libx264): CRF 23, preset :medium
+        * H265 (libx265): CRF 28, preset :medium
+        * VP8/VP9 (libvpx): VBR mode with auto target bitrate
         """
       ],
       resolution: [
-        spec: resolution(),
-        default: nil,
+        spec: resolution() | :keep,
+        default: :keep,
         description: """
-        Per-output video resolution `{width, height}`. Overrides `width` and `height` on the resolved
-        output stream format.
+        Desired resolution of the output video stream on this pad. If set to `:keep` will keep the
+        resolution of input stream. This option is valid only for video streams.
         """
       ]
     ]
@@ -168,7 +176,9 @@ defmodule Membrane.Transcoder do
                 """
               ],
               transcoding_policy: [
-                spec: transcoding_policy(),
+                spec:
+                  transcoding_policy()
+                  | (input_stream_format() -> transcoding_policy()),
                 default: :if_needed,
                 description: """
                 Specifies when transcoding should be applied.
@@ -209,11 +219,13 @@ defmodule Membrane.Transcoder do
               output_stream_format:
                 Transcoder.OutputFormat.t()
                 | Transcoder.output_format_resolver()
-                | nil,
-              transcoding_policy: Transcoder.transcoding_policy() | nil,
-              native_acceleration: Transcoder.native_acceleration() | nil,
-              bitrate: Transcoder.bitrate_option() | nil,
-              resolution: Transcoder.resolution() | nil,
+                | :keep,
+              transcoding_policy:
+                Transcoder.transcoding_policy()
+                | (Transcoder.input_stream_format() -> Transcoder.transcoding_policy()),
+              native_acceleration: Transcoder.native_acceleration(),
+              bitrate: Transcoder.bitrate_option() | :default,
+              resolution: Transcoder.resolution() | :keep,
               pad_id: pad_id(),
               suffix: {pad_id(), :output},
               funnel_name: {:funnel, {pad_id(), :output}}
@@ -234,10 +246,12 @@ defmodule Membrane.Transcoder do
     end
 
     @type t :: %__MODULE__{
-            transcoding_policy: Transcoder.transcoding_policy() | nil,
             assumed_input_stream_format: Transcoder.input_stream_format() | nil,
-            native_acceleration: Transcoder.native_acceleration() | nil,
             input_stream_format: Transcoder.input_stream_format() | nil,
+            transcoding_policy:
+              Transcoder.transcoding_policy()
+              | (Transcoder.input_stream_format() -> Transcoder.transcoding_policy()),
+            native_acceleration: Transcoder.native_acceleration(),
             output_specs: %{Pad.ref() => OutputSpec.t()}
           }
 
@@ -339,7 +353,6 @@ defmodule Membrane.Transcoder do
         resolved_format =
           output_spec.output_stream_format
           |> resolve_output_stream_format(format)
-          |> apply_resolution(output_spec.resolution)
 
         transcoding_policy = resolve_transcoding_policy(output_spec.transcoding_policy, format)
 
@@ -366,7 +379,6 @@ defmodule Membrane.Transcoder do
             resolved_format =
               output_spec.output_stream_format
               |> resolve_output_stream_format(format)
-              |> apply_resolution(output_spec.resolution)
 
             transcoding_policy =
               resolve_transcoding_policy(output_spec.transcoding_policy, format)
@@ -412,14 +424,6 @@ defmodule Membrane.Transcoder do
 
   defp resolve_transcoding_policy(f, format) when is_function(f), do: f.(format)
   defp resolve_transcoding_policy(policy, _format), do: policy
-
-  @spec apply_resolution(OutputFormat.t(), resolution()) :: OutputFormat.t()
-  defp apply_resolution(%{width: _width, height: _height} = format, {width, height}),
-    do: %{format | width: width, height: height}
-
-  defp apply_resolution(format, nil), do: format
-
-  defp apply_resolution(format, {_width, _height}), do: format
 
   defp resolve_output_stream_format(nil, input_format) do
     case input_format do
