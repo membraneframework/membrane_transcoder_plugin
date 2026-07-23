@@ -129,9 +129,9 @@ defmodule Membrane.Transcoder.OutputFormat do
     """
 
     @type t :: %__MODULE__{
-            sample_format: Membrane.RawAudio.SampleFormat.t(),
-            sample_rate: Membrane.RawAudio.sample_rate_t(),
-            channels: Membrane.RawAudio.channels_t()
+            sample_format: Membrane.RawAudio.SampleFormat.t() | :any,
+            sample_rate: Membrane.RawAudio.sample_rate_t() | :any,
+            channels: Membrane.RawAudio.channels_t() | :any
           }
     defstruct sample_format: :s16le,
               sample_rate: 48_000,
