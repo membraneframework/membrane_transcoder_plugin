@@ -97,7 +97,7 @@ defmodule Membrane.Transcoder.Video do
           output_spec
         )
     else
-      plug_encoded_conversion(builder, input_format, output_format, output_spec)
+      plug_non_transcoding_conversion(builder, input_format, output_format, output_spec)
     end
   end
 
@@ -111,7 +111,9 @@ defmodule Membrane.Transcoder.Video do
     transcoding_policy == :always or
       output_spec.resolution != :keep or
       output_spec.bitrate != :default or
-      not are_same_formats(input_format, output_format)
+      not are_same_formats(input_format, output_format) or
+      (input_format.__struct__ == Membrane.RawVideo and
+         output_format.__struct__ == OutputFormat.RawVideo)
   end
 
   @spec are_same_formats(input_format(), output_format()) :: boolean()
@@ -129,13 +131,13 @@ defmodule Membrane.Transcoder.Video do
     input_format_suffix == output_format_suffix
   end
 
-  @spec plug_encoded_conversion(
+  @spec plug_non_transcoding_conversion(
           ChildrenSpec.builder(),
           input_format(),
           output_format(),
           Transcoder.State.OutputSpec.t()
         ) :: ChildrenSpec.builder()
-  defp plug_encoded_conversion(builder, input_format, output_format, output_spec) do
+  defp plug_non_transcoding_conversion(builder, input_format, output_format, output_spec) do
     case {input_format, output_format} do
       {input_format, %OutputFormat.H264{}} when is_h264(input_format) ->
         builder
@@ -150,22 +152,6 @@ defmodule Membrane.Transcoder.Video do
           output_stream_structure: output_format.stream_structure,
           output_alignment: output_format.alignment
         })
-
-      {%Membrane.RawVideo{}, %OutputFormat.RawVideo{}} ->
-        output_pixel_formats =
-          case output_format.pixel_format do
-            :any -> :any
-            specific_pixel_format -> [specific_pixel_format]
-          end
-
-        builder
-        |> then(
-          get_raw_video_converting_segment(
-            [input_format.pixel_format],
-            output_pixel_formats,
-            output_spec
-          )
-        )
 
       _other ->
         builder
@@ -417,13 +403,11 @@ defmodule Membrane.Transcoder.Video do
          output_spec
        ) do
     produced_pixel_formats_consumable? =
-      case consumed_pixel_formats do
-        :any ->
-          true
-
-        _specific ->
-          MapSet.new(produced_pixel_formats)
-          |> MapSet.subset?(MapSet.new(consumed_pixel_formats))
+      if consumed_pixel_formats == :any do
+        true
+      else
+        MapSet.new(produced_pixel_formats)
+        |> MapSet.subset?(MapSet.new(consumed_pixel_formats))
       end
 
     converter_pixel_format =
