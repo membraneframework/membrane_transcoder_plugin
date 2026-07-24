@@ -125,8 +125,9 @@ defmodule Membrane.Transcoder.IntegrationTest do
       pid = Testing.Pipeline.start_link_supervised!()
 
       override_input_stream_format =
-        if unquote(test_case.input_format) == MPEGAudio,
-          do: %Membrane.RemoteStream{content_format: MPEGAudio, type: :packetized}
+        if unquote(test_case.input_format) == MPEGAudio, do: %MPEGAudio{}
+
+      # do: %Membrane.RemoteStream{content_format: MPEGAudio, type: :packetized}
 
       {output_stream_format, specified_fields} =
         case unquote(test_case.output_format) do
