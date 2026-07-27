@@ -109,9 +109,20 @@ defmodule Membrane.Transcoder.Video do
         ) :: boolean()
   defp should_be_transcoded(input_format, output_format, transcoding_policy, output_spec) do
     transcoding_policy == :always or
-      output_spec.resolution != :keep or
+      is_resolution_changing(input_format, output_spec.resolution) or
       output_spec.bitrate != :default or
       not are_same_formats(input_format, output_format)
+  end
+
+  @spec is_resolution_changing(input_format(), Transcoder.resolution()) :: boolean()
+  defp is_resolution_changing(input_format, resolution) do
+    case resolution do
+      :keep ->
+        false
+
+      %{width: width, height: height} ->
+        width != Map.get(input_format, :width) or height != Map.get(input_format, :height)
+    end
   end
 
   @spec are_same_formats(Transcoder.video_input_format(), OutputFormat.video()) :: boolean()
