@@ -16,12 +16,12 @@ defmodule Membrane.Transcoder do
 
   ## Usage
 
-      child(:transcoder, Membrane.Transcoder),
+      child(:transcoder, Transcoder),
       get_child(:transcoder)
-      |> via_out(Pad.ref(:output, 0), options: [output_stream_format: Membrane.OutputFormat.H264])
+      |> via_out(Pad.ref(:output, 0), options: [output_stream_format: Transcoder.OutputFormat.H264])
       |> child(:h264_sink, Membrane.File.Sink),
       get_child(:transcoder)
-      |> via_out(Pad.ref(:output, 1), options: [output_stream_format: Membrane.OutputFormat.H265])
+      |> via_out(Pad.ref(:output, 1), options: [output_stream_format: Transcoder.OutputFormat.H265])
       |> child(:h265_sink, Membrane.File.Sink)
   """
   use Membrane.Bin
@@ -480,8 +480,12 @@ defmodule Membrane.Transcoder do
           channels: channels
         }
 
-      other ->
-        module_suffix = other.__struct__ |> Module.split() |> List.last()
+      %Membrane.RemoteStream{content_format: format} ->
+        module_suffix = format |> Module.split() |> List.last()
+        struct!(Module.concat(OutputFormat, module_suffix))
+
+      other_format ->
+        module_suffix = other_format.__struct__ |> Module.split() |> List.last()
         struct!(Module.concat(OutputFormat, module_suffix))
     end
   end

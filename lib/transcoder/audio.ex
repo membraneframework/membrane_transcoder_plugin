@@ -304,4 +304,3 @@ defmodule Membrane.Transcoder.Audio do
   defp child_name(nil, base), do: base
   defp child_name(suffix, base), do: {base, suffix}
 end
-
