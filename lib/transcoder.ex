@@ -4,28 +4,12 @@ defmodule Membrane.Transcoder do
 
   The bin takes an incoming stream on its input and converts it into the desired one
   as specified by the option. Transcoding is applied only if it is neccessary.
-  The following video stream formats are supported:
-  * `Membrane.H264`
-  * `Membrane.H265`
-  * `Membrane.VP8`
-  * `Membrane.VP9`
-  * `Membrane.RawVideo`
-  * `Membrane.RemoteStream{content_format: Membrane.VP8}` (only as an input stream)
-  * `Membrane.RemoteStream{content_format: Membrane.VP9}` (only as an input stream)
+  Stream formats accepted by the transcoder are described by a
+  `t:input_format/0`.
 
-  The following audio stream formats are supported:
-  * `Membrane.AAC`
-  * `Membrane.Opus`
-  * `Membrane.MPEGAudio`
-  * `Membrane.RawAudio`
-  * `Membrane.RemoteStream{content_format: Membrane.Opus}` (only as an input stream)
-  * `Membrane.RemoteStream{content_format: Membrane.MPEGAudio}` (only as an input stream)
-
-  While `#{inspect(__MODULE__)}` can transcode between different stream formats, it can also be used
-  to change some parameters of the stream format.
-  Now, the only supported stream parameters are:
-  * `:pixel_format` in `Membrane.RawVideo`
-  * `:alignment` and `:stream_structure` in `Membrane.H264` and `Membrane.H265`
+  Output stream formats can be specified by a struct from `t:Membrane.Transcoder.OutputFormat.t/0`.
+  This struct determines the output stream format, as well parameters that can be set for this
+  format.
 
   When the `membrane_vk_video_plugin` dependency is present and Vulkan hardware is available,
   H.264 encode/decode can be offloaded to the GPU by setting `native_acceleration: :if_available`.
@@ -34,10 +18,10 @@ defmodule Membrane.Transcoder do
 
       child(:transcoder, Membrane.Transcoder),
       get_child(:transcoder)
-      |> via_out(Pad.ref(:output, 0), options: [output_stream_format: H264])
+      |> via_out(Pad.ref(:output, 0), options: [output_stream_format: Membrane.OutputFormat.H264])
       |> child(:h264_sink, Membrane.File.Sink),
       get_child(:transcoder)
-      |> via_out(Pad.ref(:output, 1), options: [output_stream_format: H265])
+      |> via_out(Pad.ref(:output, 1), options: [output_stream_format: Membrane.OutputFormat.H265])
       |> child(:h265_sink, Membrane.File.Sink)
   """
   use Membrane.Bin
@@ -49,37 +33,34 @@ defmodule Membrane.Transcoder do
 
   alias __MODULE__.{Audio, OutputFormat, Video}
 
-  alias Membrane.{
-    AAC,
-    Funnel,
-    H264,
-    H265,
-    MPEGAudio,
-    Opus,
-    Pad,
-    RawAudio,
-    RawVideo,
-    RemoteStream,
-    VP8,
-    VP9
-  }
+  alias Membrane.{Funnel, Pad}
 
-  @type input_stream_format ::
-          H264.t()
-          | H265.t()
-          | VP8.t()
-          | VP9.t()
-          | RawVideo.t()
-          | AAC.t()
-          | Opus.t()
-          | MPEGAudio.t()
-          | RemoteStream.t()
-          | RawAudio.t()
+  @type video_input_format ::
+          Membrane.VP8.t()
+          | Membrane.VP9.t()
+          | Membrane.H264.t()
+          | Membrane.H265.t()
+          | Membrane.RawVideo.t()
+          | %Membrane.RemoteStream{content_format: Membrane.VP8 | Membrane.VP9, type: :packetized}
+          | %Membrane.RemoteStream{content_format: Membrane.H264 | Membrane.H265}
+
+  @type audio_input_format ::
+          Membrane.AAC.t()
+          | Membrane.Opus.t()
+          | Membrane.MPEGAudio.t()
+          | Membrane.RawAudio.t()
+          | %Membrane.RemoteStream{
+              content_format: Membrane.AAC | Membrane.Opus | Membrane.MPEGAudio
+            }
+
+  @type input_format ::
+          video_input_format()
+          | audio_input_format()
 
   @typedoc """
   Describes a function which can be used to provide output format based on the input format.
   """
-  @type output_format_resolver :: (input_stream_format() -> OutputFormat.t())
+  @type output_format_resolver :: (input_format() -> OutputFormat.t())
 
   @type transcoding_policy ::
           :always
@@ -102,7 +83,7 @@ defmodule Membrane.Transcoder do
     accepted_format:
       format
       when Audio.is_audio_format(format) or Video.is_video_format(format) or
-             format.__struct__ == RemoteStream
+             format.__struct__ == Membrane.RemoteStream
 
   def_output_pad :output,
     availability: :on_request,
@@ -111,6 +92,7 @@ defmodule Membrane.Transcoder do
       output_stream_format: [
         spec:
           OutputFormat.t()
+          | OutputFormat.mod()
           | output_format_resolver()
           | :keep,
         default: :keep,
@@ -135,11 +117,6 @@ defmodule Membrane.Transcoder do
         * a `Membrane.Transcoder.Video.ConstantBitrate` struct for constant bitrate encoding
         * a `Membrane.Transcoder.Video.VariableBitrate` struct for variable bitrate encoding
         * `:default` - use encoder defaults
-
-        When nil, the underlying encoders use their default rate control:
-        * H264 (libx264): CRF 23, preset :medium
-        * H265 (libx265): CRF 28, preset :medium
-        * VP8/VP9 (libvpx): VBR mode with auto target bitrate
         """
       ],
       resolution: [
@@ -178,7 +155,7 @@ defmodule Membrane.Transcoder do
               transcoding_policy: [
                 spec:
                   transcoding_policy()
-                  | (input_stream_format() -> transcoding_policy()),
+                  | (input_format() -> transcoding_policy()),
                 default: :if_needed,
                 description: """
                 Specifies when transcoding should be applied.
@@ -222,7 +199,7 @@ defmodule Membrane.Transcoder do
                 | :keep,
               transcoding_policy:
                 Transcoder.transcoding_policy()
-                | (Transcoder.input_stream_format() -> Transcoder.transcoding_policy()),
+                | (Transcoder.input_format() -> Transcoder.transcoding_policy()),
               native_acceleration: Transcoder.native_acceleration(),
               bitrate: Transcoder.bitrate_option() | :default,
               resolution: Transcoder.resolution() | :keep,
@@ -246,11 +223,11 @@ defmodule Membrane.Transcoder do
     end
 
     @type t :: %__MODULE__{
-            assumed_input_stream_format: Transcoder.input_stream_format() | nil,
-            input_stream_format: Transcoder.input_stream_format() | nil,
+            assumed_input_stream_format: Transcoder.input_format() | nil,
+            input_stream_format: Transcoder.input_format() | nil,
             transcoding_policy:
               Transcoder.transcoding_policy()
-              | (Transcoder.input_stream_format() -> Transcoder.transcoding_policy()),
+              | (Transcoder.input_format() -> Transcoder.transcoding_policy()),
             native_acceleration: Transcoder.native_acceleration(),
             output_specs: %{Pad.ref() => OutputSpec.t()}
           }
@@ -330,6 +307,22 @@ defmodule Membrane.Transcoder do
   @impl true
   def handle_pad_removed(Pad.ref(:output, _id) = pad_ref, _ctx, %State{} = state) do
     {[], %State{state | output_specs: Map.delete(state.output_specs, pad_ref)}}
+  end
+
+  @impl true
+  def handle_child_notification(
+        {:stream_format, _pad, %Membrane.RemoteStream{content_format: nil} = format},
+        :connector,
+        _ctx,
+        %State{} = state
+      )
+      when state.input_stream_format == nil do
+    raise """
+    Stream format #{inspect(format)} doesn't have enough information to be recognized, please set
+    the `:assumed_input_stream_format` option to a stream format with information about it's
+    the content format (e.g. `%Membrane.RemoteStream{content_format: Membrane.H264}` if the stream is
+    H264) or provide a stream format with sufficient information.
+    """
   end
 
   @impl true
@@ -422,43 +415,75 @@ defmodule Membrane.Transcoder do
     {[], state}
   end
 
+  @spec resolve_transcoding_policy(
+          transcoding_policy() | (input_format() -> transcoding_policy()),
+          input_format()
+        ) :: transcoding_policy()
   defp resolve_transcoding_policy(f, format) when is_function(f), do: f.(format)
   defp resolve_transcoding_policy(policy, _format), do: policy
 
-  defp resolve_output_stream_format(nil, input_format) do
-    case input_format do
-      %{width: _width, height: _height} -> %{input_format | width: nil, height: nil}
-      _input_format -> input_format
-    end
-  end
-
+  @spec resolve_output_stream_format(
+          OutputFormat.t() | output_format_resolver() | :keep,
+          input_format()
+        ) :: OutputFormat.t()
   defp resolve_output_stream_format(output_stream_format, input_format) do
     case output_stream_format do
+      :keep ->
+        keep_input_format(input_format)
+
       format when is_struct(format) ->
         format
 
       module when is_atom(module) ->
         struct(module)
 
-      {module, opts} when is_atom(module) and is_list(opts) ->
-        struct(module, opts)
-
       resolver when is_function(resolver) ->
         resolve_output_stream_format(resolver.(input_format), input_format)
     end
   end
 
-  defp plug_transcoding(
-         builder,
-         input_format,
-         output_format,
-         transcoding_policy,
-         _use_hardware_acceleration?,
-         output_spec
-       )
-       when Audio.is_audio_format(input_format) do
-    builder
-    |> Audio.plug_audio_transcoding(input_format, output_format, transcoding_policy, output_spec)
+  @spec keep_input_format(input_format()) :: OutputFormat.t()
+  defp keep_input_format(input_format) do
+    case input_format do
+      %Membrane.H264{alignment: alignment, stream_structure: :annexb} ->
+        %OutputFormat.H264{alignment: alignment, stream_structure: :annexb}
+
+      %Membrane.H264{alignment: alignment, stream_structure: {avc, _dcr}} ->
+        %OutputFormat.H264{alignment: alignment, stream_structure: avc}
+
+      %Membrane.H265{alignment: alignment, stream_structure: :annexb} ->
+        %OutputFormat.H265{alignment: alignment, stream_structure: :annexb}
+
+      %Membrane.H265{alignment: alignment, stream_structure: {hevc, _dcr}} ->
+        %OutputFormat.H265{alignment: alignment, stream_structure: hevc}
+
+      %Membrane.RawVideo{pixel_format: pixel_format} ->
+        %OutputFormat.RawVideo{pixel_format: pixel_format}
+
+      %Membrane.AAC{encapsulation: encapsulation, config: {config_type, _content}} ->
+        %OutputFormat.AAC{encapsulation: encapsulation, config: config_type}
+
+      %Membrane.AAC{encapsulation: encapsulation, config: nil} ->
+        %OutputFormat.AAC{encapsulation: encapsulation, config: nil}
+
+      %Membrane.Opus{self_delimiting?: self_delimiting?} ->
+        %OutputFormat.Opus{self_delimiting?: self_delimiting?}
+
+      %Membrane.RawAudio{
+        sample_format: sample_format,
+        sample_rate: sample_rate,
+        channels: channels
+      } ->
+        %OutputFormat.RawAudio{
+          sample_format: sample_format,
+          sample_rate: sample_rate,
+          channels: channels
+        }
+
+      other ->
+        module_suffix = other.__struct__ |> Module.split() |> List.last()
+        struct!(Module.concat(OutputFormat, module_suffix))
+    end
   end
 
   defp plug_transcoding(
@@ -468,36 +493,38 @@ defmodule Membrane.Transcoder do
          transcoding_policy,
          use_hardware_acceleration?,
          output_spec
-       )
-       when Video.is_video_format(input_format) do
-    builder
-    |> Video.plug_video_transcoding(
-      input_format,
-      output_format,
-      transcoding_policy,
-      use_hardware_acceleration?,
-      output_spec
-    )
-  end
-
-  defp plug_transcoding(
-         _builder,
-         input_format,
-         _output_format,
-         _transcoding_policy,
-         _use_hardware_acceleration?,
-         _output_spec
        ) do
-    case input_format do
-      %RemoteStream{content_format: nil} ->
+    cond do
+      Audio.is_audio_format(input_format) and Audio.is_audio_format(output_format) ->
+        builder
+        |> Audio.plug_audio_transcoding(
+          input_format,
+          output_format,
+          transcoding_policy,
+          output_spec
+        )
+
+      Video.is_video_format(input_format) and Video.is_video_format(output_format) ->
+        builder
+        |> Video.plug_video_transcoding(
+          input_format,
+          output_format,
+          transcoding_policy,
+          use_hardware_acceleration?,
+          output_spec
+        )
+
+      Audio.is_audio_format(input_format) and Video.is_video_format(output_format) ->
         raise """
-        Stream format #{inspect(input_format)} doesn't have enough information to be recognized, please set
-        the `:assumed_input_stream_format` option to a stream format with information about it's
-        the content format (e.g. `%RemoteStream{content_format: Membrane.H264}` if the stream is
-        H264) or provide a stream format with sufficient information.
+        Cannot transcode an audio stream #{inspect(input_format)} to a video stream #{inspect(output_format)}.
         """
 
-      _other ->
+      Video.is_video_format(input_format) and Audio.is_audio_format(output_format) ->
+        raise """
+        Cannot transcode a video stream #{inspect(input_format)} to an audio stream #{inspect(output_format)}.
+        """
+
+      true ->
         raise """
         Didn't recognize stream format #{inspect(input_format)}, check the `Membrane.Transcoder` moduledoc to
         see the list of supported formats. You may also set the `:assumed_input_stream_format` option with a
