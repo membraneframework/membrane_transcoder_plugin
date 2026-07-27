@@ -19,7 +19,9 @@ defmodule Membrane.Transcoder.OutputFormat do
           | Opus.t()
           | MPEGAudio.t()
           | RawAudio.t()
-          | H264
+
+  @type mod ::
+          H264
           | H265
           | VP8
           | VP9
@@ -97,12 +99,10 @@ defmodule Membrane.Transcoder.OutputFormat do
               | :esds
               | {:esds, avg_bit_rate :: non_neg_integer(), max_bit_rate :: non_neg_integer()}
               | nil,
-            encapsulation: Membrane.AAC.encapsulation(),
-            samples_per_frame: Membrane.AAC.samples_per_frame()
+            encapsulation: Membrane.AAC.encapsulation()
           }
     defstruct config: nil,
-              encapsulation: :none,
-              samples_per_frame: 1024
+              encapsulation: :none
   end
 
   defmodule Opus do
