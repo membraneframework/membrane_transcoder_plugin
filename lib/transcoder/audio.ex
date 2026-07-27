@@ -122,18 +122,6 @@ defmodule Membrane.Transcoder.Audio do
     })
   end
 
-  defp do_plug_audio_transcoding(
-         builder,
-         input_format,
-         output_format,
-         transcoding_policy,
-         _suffix
-       )
-       when transcoding_policy in [:if_needed, :never] and is_mpeg_audio_format(input_format) and
-              is_mpeg_audio_format(output_format) do
-    builder
-  end
-
   defp do_plug_audio_transcoding(_builder, input_format, output_format, :never, _suffix) do
     raise """
     Cannot convert input format #{inspect(input_format)} to output format #{inspect(output_format)} \

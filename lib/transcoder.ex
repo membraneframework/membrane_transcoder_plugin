@@ -33,7 +33,31 @@ defmodule Membrane.Transcoder do
 
   alias __MODULE__.{Audio, OutputFormat, Video}
 
-  alias Membrane.{Funnel, Pad}
+  alias Membrane.Pad
+
+  @accepted_input_format_modules [
+    Membrane.H264,
+    Membrane.H265,
+    Membrane.VP8,
+    Membrane.VP9,
+    Membrane.RawVideo,
+    Membrane.AAC,
+    Membrane.Opus,
+    Membrane.MPEGAudio,
+    Membrane.RawAudio
+  ]
+
+  @output_format_modules [
+    OutputFormat.H264,
+    OutputFormat.H265,
+    OutputFormat.VP8,
+    OutputFormat.VP9,
+    OutputFormat.RawVideo,
+    OutputFormat.AAC,
+    OutputFormat.Opus,
+    OutputFormat.MPEGAudio,
+    OutputFormat.RawAudio
+  ]
 
   @type video_input_format ::
           Membrane.VP8.t()
@@ -111,7 +135,7 @@ defmodule Membrane.Transcoder do
         spec: bitrate_option() | :default,
         default: :default,
         description: """
-        Per-output bitrate setting for video streams.
+        Per-output bitrate setting, can only be set for video streams.
 
         Can be either:
         * a `Membrane.Transcoder.Video.ConstantBitrate` struct for constant bitrate encoding
@@ -205,7 +229,7 @@ defmodule Membrane.Transcoder do
               resolution: Transcoder.resolution() | :keep,
               pad_id: pad_id(),
               suffix: {pad_id(), :output},
-              funnel_name: {:funnel, {pad_id(), :output}}
+              connector_name: {:connector, {pad_id(), :output}}
             }
 
       @enforce_keys [
@@ -216,7 +240,7 @@ defmodule Membrane.Transcoder do
         :resolution,
         :pad_id,
         :suffix,
-        :funnel_name
+        :connector_name
       ]
 
       defstruct @enforce_keys
@@ -246,7 +270,7 @@ defmodule Membrane.Transcoder do
     spec =
       bin_input()
       |> maybe_plug_stream_format_changer(opts.assumed_input_stream_format)
-      |> child(:connector, %Membrane.Connector{notify_on_stream_format?: true})
+      |> child(:input_connector, %Membrane.Connector{notify_on_stream_format?: true})
 
     state = struct!(State, Map.from_struct(opts))
 
@@ -285,7 +309,7 @@ defmodule Membrane.Transcoder do
     pad_opts = ctx.pads[pad_ref].options
 
     suffix = {pad_id, :output}
-    funnel_name = {:funnel, suffix}
+    connector_name = {:connector, suffix}
 
     output_spec = %State.OutputSpec{
       output_stream_format: pad_opts.output_stream_format,
@@ -293,12 +317,12 @@ defmodule Membrane.Transcoder do
       native_acceleration: state.native_acceleration,
       bitrate: pad_opts.bitrate,
       resolution: pad_opts.resolution,
-      funnel_name: funnel_name,
+      connector_name: connector_name,
       suffix: suffix,
       pad_id: pad_id
     }
 
-    spec = child(funnel_name, Funnel) |> bin_output(pad_ref)
+    spec = child(connector_name, Membrane.Connector) |> bin_output(pad_ref)
 
     {[spec: spec],
      %State{state | output_specs: Map.put(state.output_specs, pad_ref, output_spec)}}
@@ -312,7 +336,7 @@ defmodule Membrane.Transcoder do
   @impl true
   def handle_child_notification(
         {:stream_format, _pad, %Membrane.RemoteStream{content_format: nil} = format},
-        :connector,
+        :input_connector,
         _ctx,
         %State{} = state
       )
@@ -328,7 +352,7 @@ defmodule Membrane.Transcoder do
   @impl true
   def handle_child_notification(
         {:stream_format, _pad, format},
-        :connector,
+        :input_connector,
         _ctx,
         %State{} = state
       )
@@ -341,51 +365,21 @@ defmodule Membrane.Transcoder do
     specs =
       if single_output? do
         [{_pad_ref, output_spec}] = output_specs_list
-        use_hw? = should_use_hardware_acceleration?(output_spec.native_acceleration)
 
-        resolved_format =
-          output_spec.output_stream_format
-          |> resolve_output_stream_format(format)
-
-        transcoding_policy = resolve_transcoding_policy(output_spec.transcoding_policy, format)
-
-        [
-          get_child(:connector)
-          |> plug_transcoding(
-            format,
-            resolved_format,
-            transcoding_policy,
-            use_hw?,
-            output_spec
-          )
-          |> get_child(output_spec.funnel_name)
-        ]
+        get_child(:input_connector)
+        |> plug_transcoding(format, output_spec)
+        |> get_child(output_spec.connector_name)
       else
         # Build tee and all output pipelines in a single spec so the tee
         # is never in a state where data flows through it without outputs connected.
-        tee_spec = get_child(:connector) |> child(:tee, Membrane.Tee.Parallel)
+        tee_spec = get_child(:input_connector) |> child(:tee, Membrane.Tee.Parallel)
 
         output_pipeline_specs =
           Enum.map(output_specs_list, fn {_pad_ref, output_spec} ->
-            use_hw? = should_use_hardware_acceleration?(output_spec.native_acceleration)
-
-            resolved_format =
-              output_spec.output_stream_format
-              |> resolve_output_stream_format(format)
-
-            transcoding_policy =
-              resolve_transcoding_policy(output_spec.transcoding_policy, format)
-
             get_child(:tee)
             |> via_out(Pad.ref(:output, output_spec.pad_id))
-            |> plug_transcoding(
-              format,
-              resolved_format,
-              transcoding_policy,
-              use_hw?,
-              output_spec
-            )
-            |> get_child(output_spec.funnel_name)
+            |> plug_transcoding(format, output_spec)
+            |> get_child(output_spec.connector_name)
           end)
 
         [tee_spec | output_pipeline_specs]
@@ -395,7 +389,7 @@ defmodule Membrane.Transcoder do
   end
 
   @impl true
-  def handle_child_notification({:stream_format, _pad, new_format}, :connector, _ctx, state) do
+  def handle_child_notification({:stream_format, _pad, new_format}, :input_connector, _ctx, state) do
     %new_stream_format_module{} = new_format
     %old_stream_format_module{} = state.input_stream_format
 
@@ -431,11 +425,11 @@ defmodule Membrane.Transcoder do
       :keep ->
         keep_input_format(input_format)
 
-      format when is_struct(format) ->
+      format when is_struct(format) and format.__struct__ in @output_format_modules ->
         format
 
       module when is_atom(module) ->
-        struct(module)
+        resolve_output_stream_format(struct(module), input_format)
 
       resolver when is_function(resolver) ->
         resolve_output_stream_format(resolver.(input_format), input_format)
@@ -480,11 +474,13 @@ defmodule Membrane.Transcoder do
           channels: channels
         }
 
-      %Membrane.RemoteStream{content_format: format} ->
+      %Membrane.RemoteStream{content_format: format}
+      when format in @accepted_input_format_modules ->
         module_suffix = format |> Module.split() |> List.last()
         struct!(Module.concat(OutputFormat, module_suffix))
 
-      other_format ->
+      other_format
+      when is_struct(other_format) and other_format.__struct__ in @accepted_input_format_modules ->
         module_suffix = other_format.__struct__ |> Module.split() |> List.last()
         struct!(Module.concat(OutputFormat, module_suffix))
     end
@@ -493,13 +489,25 @@ defmodule Membrane.Transcoder do
   defp plug_transcoding(
          builder,
          input_format,
-         output_format,
-         transcoding_policy,
-         use_hardware_acceleration?,
          output_spec
        ) do
+    use_hardware_acceleration? =
+      should_use_hardware_acceleration?(output_spec.native_acceleration)
+
+    output_format =
+      resolve_output_stream_format(output_spec.output_stream_format, input_format)
+
+    transcoding_policy = resolve_transcoding_policy(output_spec.transcoding_policy, input_format)
+
     cond do
       Audio.is_audio_format(input_format) and Audio.is_audio_format(output_format) ->
+        if output_spec.bitrate != :default do
+          raise """
+          Bitrate option not supported for audio streams, but set to #{inspect(output_spec.bitrate)} for
+          #{inspect(output_format)} stream.
+          """
+        end
+
         builder
         |> Audio.plug_audio_transcoding(
           input_format,

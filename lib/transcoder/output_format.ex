@@ -9,16 +9,20 @@ defmodule Membrane.Transcoder.OutputFormat do
 
   alias __MODULE__.{AAC, H264, H265, MPEGAudio, Opus, RawAudio, RawVideo, VP8, VP9}
 
-  @type t ::
-          H264.t()
-          | H265.t()
-          | VP8.t()
+  @type video ::
+          VP8.t()
           | VP9.t()
+          | H264.t()
+          | H265.t()
           | RawVideo.t()
-          | AAC.t()
+
+  @type audio ::
+          AAC.t()
           | Opus.t()
           | MPEGAudio.t()
           | RawAudio.t()
+
+  @type t :: audio() | video()
 
   @type mod ::
           H264
