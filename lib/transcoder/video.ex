@@ -59,7 +59,7 @@ defmodule Membrane.Transcoder.Video do
 
   @spec plug_video_transcoding(
           ChildrenSpec.builder(),
-          input_format(),
+          Transcoder.video_input_format(),
           output_format(),
           Transcoder.transcoding_policy(),
           boolean(),
@@ -72,13 +72,13 @@ defmodule Membrane.Transcoder.Video do
         transcoding_policy,
         use_vk_video?,
         output_spec
-      )
-      when is_video_format(input_format) and is_video_format(output_format) do
+      ) do
     if should_be_transcoded(input_format, output_format, transcoding_policy, output_spec) do
       if transcoding_policy == :never do
         raise """
-        Cannot convert input format #{inspect(input_format)} to output format #{inspect(output_format)} \
-        with :transcoding_policy option set to :never.
+        Cannot convert input format #{inspect(input_format)} to output format #{inspect(output_format)}
+        with bitrate `#{inspect(output_spec.bitrate)}` and resolution `#{inspect(output_spec.resolution)}`
+        when `:transcoding_policy` option is set to `:never`.
         """
       end
 
@@ -102,7 +102,7 @@ defmodule Membrane.Transcoder.Video do
   end
 
   @spec should_be_transcoded(
-          input_format(),
+          Transcoder.video_input_format(),
           output_format(),
           Transcoder.transcoding_policy(),
           Transcoder.State.OutputSpec.t()
@@ -111,12 +111,10 @@ defmodule Membrane.Transcoder.Video do
     transcoding_policy == :always or
       output_spec.resolution != :keep or
       output_spec.bitrate != :default or
-      not are_same_formats(input_format, output_format) or
-      (input_format.__struct__ == Membrane.RawVideo and
-         output_format.__struct__ == OutputFormat.RawVideo)
+      not are_same_formats(input_format, output_format)
   end
 
-  @spec are_same_formats(input_format(), output_format()) :: boolean()
+  @spec are_same_formats(Transcoder.video_input_format(), output_format()) :: boolean()
   defp are_same_formats(input_format, output_format) do
     input_format_suffix =
       case input_format do
@@ -133,7 +131,7 @@ defmodule Membrane.Transcoder.Video do
 
   @spec plug_non_transcoding_conversion(
           ChildrenSpec.builder(),
-          input_format(),
+          Transcoder.video_input_format(),
           output_format(),
           Transcoder.State.OutputSpec.t()
         ) :: ChildrenSpec.builder()
@@ -153,6 +151,17 @@ defmodule Membrane.Transcoder.Video do
           output_alignment: output_format.alignment
         })
 
+      {%Membrane.RawVideo{pixel_format: input_pixel_format},
+       %OutputFormat.RawVideo{pixel_format: output_pixel_format}} ->
+        builder
+        |> then(
+          get_raw_video_converting_segment(
+            [input_pixel_format],
+            if(output_pixel_format == :any, do: :any, else: [output_pixel_format]),
+            output_spec
+          )
+        )
+
       _other ->
         builder
     end
@@ -160,7 +169,7 @@ defmodule Membrane.Transcoder.Video do
 
   @spec maybe_plug_single_element_transcoding(
           ChildrenSpec.builder(),
-          input_format(),
+          Transcoder.video_input_format(),
           output_format(),
           boolean(),
           Transcoder.State.OutputSpec.t()
@@ -170,11 +179,17 @@ defmodule Membrane.Transcoder.Video do
          input_format,
          output_format,
          use_vk_video?,
-         output_spec
+         %Transcoder.State.OutputSpec{resolution: resolution} = output_spec
        ) do
     case {input_format, output_format} do
-      {input_format, %OutputFormat.H264{}} when is_h264(input_format) and use_vk_video? ->
-        plug_vulkan_transcoder(builder, output_format, output_spec)
+      {%Membrane.H264{width: width, height: height}, %OutputFormat.H264{}}
+      when use_vk_video? and resolution == :keep and not is_nil(width) and not is_nil(height) ->
+        resolution = %{width: width, height: height}
+        plug_vulkan_transcoder(builder, output_format, resolution, output_spec)
+
+      {input_format, %OutputFormat.H264{}}
+      when is_h264(input_format) and use_vk_video? and resolution != :keep ->
+        plug_vulkan_transcoder(builder, output_format, output_spec.resolution, output_spec)
 
       _other ->
         nil
@@ -184,9 +199,10 @@ defmodule Membrane.Transcoder.Video do
   @spec plug_vulkan_transcoder(
           ChildrenSpec.builder(),
           output_format(),
+          Transcoder.resolution(),
           Transcoder.State.OutputSpec.t()
         ) :: ChildrenSpec.builder()
-  defp plug_vulkan_transcoder(builder, output_format, output_spec) do
+  defp plug_vulkan_transcoder(builder, output_format, resolution, output_spec) do
     builder =
       builder
       |> child({:h264_input_parser, output_spec.suffix}, %Membrane.H264.Parser{
@@ -196,9 +212,10 @@ defmodule Membrane.Transcoder.Video do
       |> child({:vk_transcoder, output_spec.suffix}, Membrane.VKVideo.Transcoder)
       |> via_out(Pad.ref(:output, 0),
         options: [
-          width: output_spec.resolution.width,
-          height: output_spec.resolution.height,
-          scaling_algorithm: :bilinear
+          width: resolution.width,
+          height: resolution.height,
+          scaling_algorithm: :bilinear,
+          rate_control: get_vkvideo_rate_control(output_spec.bitrate)
         ]
       )
 
@@ -215,7 +232,7 @@ defmodule Membrane.Transcoder.Video do
 
   @spec plug_multi_element_transcoding(
           ChildrenSpec.builder(),
-          input_format(),
+          Transcoder.video_input_format(),
           output_format(),
           boolean(),
           Transcoder.State.OutputSpec.t()
@@ -247,7 +264,7 @@ defmodule Membrane.Transcoder.Video do
   end
 
   @spec get_raw_video_producing_segment(
-          input_format(),
+          Transcoder.video_input_format(),
           boolean(),
           Transcoder.State.OutputSpec.t()
         ) ::
