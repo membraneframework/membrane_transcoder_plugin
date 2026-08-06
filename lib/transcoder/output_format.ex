@@ -7,6 +7,7 @@ defmodule Membrane.Transcoder.OutputFormat do
   have `:stream_structure` field set to `:annexb`, and `:alignment` to `:au`.
   """
 
+  alias Membrane.Transcoder
   alias __MODULE__.{AAC, H264, H265, MPEGAudio, Opus, RawAudio, RawVideo, VP8, VP9}
 
   @type video ::
@@ -140,5 +141,67 @@ defmodule Membrane.Transcoder.OutputFormat do
     defstruct sample_format: :s16le,
               sample_rate: 48_000,
               channels: 1
+  end
+
+  @accepted_input_format_modules [
+    Membrane.H264,
+    Membrane.H265,
+    Membrane.VP8,
+    Membrane.VP9,
+    Membrane.RawVideo,
+    Membrane.AAC,
+    Membrane.Opus,
+    Membrane.MPEGAudio,
+    Membrane.RawAudio
+  ]
+
+  @spec from_input_format(Transcoder.input_format()) :: t()
+  def from_input_format(input_format) do
+    case input_format do
+      %Membrane.H264{alignment: alignment, stream_structure: :annexb} ->
+        %H264{alignment: alignment, stream_structure: :annexb}
+
+      %Membrane.H264{alignment: alignment, stream_structure: {avc, _dcr}} ->
+        %H264{alignment: alignment, stream_structure: avc}
+
+      %Membrane.H265{alignment: alignment, stream_structure: :annexb} ->
+        %H265{alignment: alignment, stream_structure: :annexb}
+
+      %Membrane.H265{alignment: alignment, stream_structure: {hevc, _dcr}} ->
+        %H265{alignment: alignment, stream_structure: hevc}
+
+      %Membrane.RawVideo{pixel_format: pixel_format} ->
+        %RawVideo{pixel_format: pixel_format}
+
+      %Membrane.AAC{encapsulation: encapsulation, config: {config_type, _content}} ->
+        %AAC{encapsulation: encapsulation, config: config_type}
+
+      %Membrane.AAC{encapsulation: encapsulation, config: nil} ->
+        %AAC{encapsulation: encapsulation, config: nil}
+
+      %Membrane.Opus{self_delimiting?: self_delimiting?} ->
+        %Opus{self_delimiting?: self_delimiting?}
+
+      %Membrane.RawAudio{
+        sample_format: sample_format,
+        sample_rate: sample_rate,
+        channels: channels
+      } ->
+        %RawAudio{
+          sample_format: sample_format,
+          sample_rate: sample_rate,
+          channels: channels
+        }
+
+      %Membrane.RemoteStream{content_format: format}
+      when format in @accepted_input_format_modules ->
+        module_suffix = format |> Module.split() |> List.last()
+        struct!(module_suffix)
+
+      other_format
+      when is_struct(other_format) and other_format.__struct__ in @accepted_input_format_modules ->
+        module_suffix = other_format.__struct__ |> Module.split() |> List.last()
+        struct!(module_suffix)
+    end
   end
 end

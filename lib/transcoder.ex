@@ -35,18 +35,6 @@ defmodule Membrane.Transcoder do
 
   alias Membrane.Pad
 
-  @accepted_input_format_modules [
-    Membrane.H264,
-    Membrane.H265,
-    Membrane.VP8,
-    Membrane.VP9,
-    Membrane.RawVideo,
-    Membrane.AAC,
-    Membrane.Opus,
-    Membrane.MPEGAudio,
-    Membrane.RawAudio
-  ]
-
   @output_format_modules [
     OutputFormat.H264,
     OutputFormat.H265,
@@ -423,7 +411,7 @@ defmodule Membrane.Transcoder do
   defp resolve_output_stream_format(output_stream_format, input_format) do
     case output_stream_format do
       :keep ->
-        keep_input_format(input_format)
+        OutputFormat.from_input_format(input_format)
 
       format when is_struct(format) and format.__struct__ in @output_format_modules ->
         format
@@ -433,56 +421,6 @@ defmodule Membrane.Transcoder do
 
       resolver when is_function(resolver) ->
         resolve_output_stream_format(resolver.(input_format), input_format)
-    end
-  end
-
-  @spec keep_input_format(input_format()) :: OutputFormat.t()
-  defp keep_input_format(input_format) do
-    case input_format do
-      %Membrane.H264{alignment: alignment, stream_structure: :annexb} ->
-        %OutputFormat.H264{alignment: alignment, stream_structure: :annexb}
-
-      %Membrane.H264{alignment: alignment, stream_structure: {avc, _dcr}} ->
-        %OutputFormat.H264{alignment: alignment, stream_structure: avc}
-
-      %Membrane.H265{alignment: alignment, stream_structure: :annexb} ->
-        %OutputFormat.H265{alignment: alignment, stream_structure: :annexb}
-
-      %Membrane.H265{alignment: alignment, stream_structure: {hevc, _dcr}} ->
-        %OutputFormat.H265{alignment: alignment, stream_structure: hevc}
-
-      %Membrane.RawVideo{pixel_format: pixel_format} ->
-        %OutputFormat.RawVideo{pixel_format: pixel_format}
-
-      %Membrane.AAC{encapsulation: encapsulation, config: {config_type, _content}} ->
-        %OutputFormat.AAC{encapsulation: encapsulation, config: config_type}
-
-      %Membrane.AAC{encapsulation: encapsulation, config: nil} ->
-        %OutputFormat.AAC{encapsulation: encapsulation, config: nil}
-
-      %Membrane.Opus{self_delimiting?: self_delimiting?} ->
-        %OutputFormat.Opus{self_delimiting?: self_delimiting?}
-
-      %Membrane.RawAudio{
-        sample_format: sample_format,
-        sample_rate: sample_rate,
-        channels: channels
-      } ->
-        %OutputFormat.RawAudio{
-          sample_format: sample_format,
-          sample_rate: sample_rate,
-          channels: channels
-        }
-
-      %Membrane.RemoteStream{content_format: format}
-      when format in @accepted_input_format_modules ->
-        module_suffix = format |> Module.split() |> List.last()
-        struct!(Module.concat(OutputFormat, module_suffix))
-
-      other_format
-      when is_struct(other_format) and other_format.__struct__ in @accepted_input_format_modules ->
-        module_suffix = other_format.__struct__ |> Module.split() |> List.last()
-        struct!(Module.concat(OutputFormat, module_suffix))
     end
   end
 
