@@ -121,7 +121,7 @@ defmodule Membrane.Transcoder.OutputFormat do
 
   defmodule MPEGAudio do
     @moduledoc """
-    Struct defining the desired output Membrane stream format.
+    Struct defining the desired output MPEGAudio stream format.
     """
 
     @type t :: %__MODULE__{}
