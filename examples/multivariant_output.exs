@@ -39,7 +39,7 @@ defmodule Example do
             alignment: :au,
             stream_structure: :annexb
           },
-          resolution: {320, 160}
+          resolution: %{width: 320, height: 160}
         ]
       )
       |> child(:h264_sink, %Membrane.File.Sink{location: h264_output_file}),

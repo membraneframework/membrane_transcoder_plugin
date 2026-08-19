@@ -60,7 +60,7 @@ defmodule Membrane.Transcoder.Video do
   @spec plug_video_transcoding(
           ChildrenSpec.builder(),
           Transcoder.video_input_format(),
-          output_format(),
+          OutputFormat.video(),
           Transcoder.transcoding_policy(),
           boolean(),
           Transcoder.State.OutputSpec.t()
@@ -103,18 +103,29 @@ defmodule Membrane.Transcoder.Video do
 
   @spec should_be_transcoded(
           Transcoder.video_input_format(),
-          output_format(),
+          OutputFormat.video(),
           Transcoder.transcoding_policy(),
           Transcoder.State.OutputSpec.t()
         ) :: boolean()
   defp should_be_transcoded(input_format, output_format, transcoding_policy, output_spec) do
     transcoding_policy == :always or
-      output_spec.resolution != :keep or
+      is_resolution_changing(input_format, output_spec.resolution) or
       output_spec.bitrate != :default or
       not are_same_formats(input_format, output_format)
   end
 
-  @spec are_same_formats(Transcoder.video_input_format(), output_format()) :: boolean()
+  @spec is_resolution_changing(input_format(), Transcoder.resolution()) :: boolean()
+  defp is_resolution_changing(input_format, resolution) do
+    case resolution do
+      :keep ->
+        false
+
+      %{width: width, height: height} ->
+        width != Map.get(input_format, :width) or height != Map.get(input_format, :height)
+    end
+  end
+
+  @spec are_same_formats(Transcoder.video_input_format(), OutputFormat.video()) :: boolean()
   defp are_same_formats(input_format, output_format) do
     input_format_suffix =
       case input_format do
@@ -132,7 +143,7 @@ defmodule Membrane.Transcoder.Video do
   @spec plug_non_transcoding_conversion(
           ChildrenSpec.builder(),
           Transcoder.video_input_format(),
-          output_format(),
+          OutputFormat.video(),
           Transcoder.State.OutputSpec.t()
         ) :: ChildrenSpec.builder()
   defp plug_non_transcoding_conversion(builder, input_format, output_format, output_spec) do
@@ -170,7 +181,7 @@ defmodule Membrane.Transcoder.Video do
   @spec maybe_plug_single_element_transcoding(
           ChildrenSpec.builder(),
           Transcoder.video_input_format(),
-          output_format(),
+          OutputFormat.video(),
           boolean(),
           Transcoder.State.OutputSpec.t()
         ) :: ChildrenSpec.builder() | nil
@@ -198,7 +209,7 @@ defmodule Membrane.Transcoder.Video do
 
   @spec plug_vulkan_transcoder(
           ChildrenSpec.builder(),
-          output_format(),
+          OutputFormat.video(),
           Transcoder.resolution(),
           Transcoder.State.OutputSpec.t()
         ) :: ChildrenSpec.builder()
@@ -233,7 +244,7 @@ defmodule Membrane.Transcoder.Video do
   @spec plug_multi_element_transcoding(
           ChildrenSpec.builder(),
           Transcoder.video_input_format(),
-          output_format(),
+          OutputFormat.video(),
           boolean(),
           Transcoder.State.OutputSpec.t()
         ) :: ChildrenSpec.builder()
@@ -326,7 +337,7 @@ defmodule Membrane.Transcoder.Video do
   end
 
   @spec get_raw_video_consuming_segment(
-          output_format(),
+          OutputFormat.video(),
           boolean(),
           Transcoder.State.OutputSpec.t()
         ) ::
