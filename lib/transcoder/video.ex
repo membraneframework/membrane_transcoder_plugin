@@ -190,7 +190,7 @@ defmodule Membrane.Transcoder.Video do
          input_format,
          output_format,
          use_vk_video?,
-         %Transcoder.State.OutputSpec{resolution: resolution} = output_spec
+         %{resolution: resolution} = output_spec
        ) do
     case {input_format, output_format} do
       {%Membrane.H264{width: width, height: height}, %OutputFormat.H264{}}
