@@ -195,13 +195,21 @@ defmodule Membrane.Transcoder.OutputFormat do
 
       %Membrane.RemoteStream{content_format: format}
       when format in @accepted_input_format_modules ->
-        module_suffix = format |> Module.split() |> List.last()
-        struct!(module_suffix)
+        format
+        |> Module.split()
+        |> List.last()
+        |> String.to_existing_atom()
+        |> then(&Module.concat(__MODULE__, &1))
+        |> struct!()
 
       other_format
       when is_struct(other_format) and other_format.__struct__ in @accepted_input_format_modules ->
-        module_suffix = other_format.__struct__ |> Module.split() |> List.last()
-        struct!(module_suffix)
+        other_format.__struct__
+        |> Module.split()
+        |> List.last()
+        |> String.to_existing_atom()
+        |> then(&Module.concat(__MODULE__, &1))
+        |> struct!()
     end
   end
 end

@@ -29,7 +29,8 @@ defmodule Membrane.Transcoder.Audio do
           | Membrane.Opus.t()
           | Membrane.MPEGAudio.t()
           | Membrane.RawAudio.t()
-          | %RemoteStream{content_format: Membrane.AAC | Membrane.Opus | Membrane.MPEGAudio}
+          | %RemoteStream{content_format: Membrane.AAC | Membrane.MPEGAudio}
+          | %RemoteStream{content_format: Membrane.Opus, type: :packetized}
 
   @type audio_output_format ::
           OutputFormat.AAC.t()
@@ -51,7 +52,8 @@ defmodule Membrane.Transcoder.Audio do
             when is_struct(format) and
                    (format.__struct__ in [Membrane.Opus, OutputFormat.Opus] or
                       (format.__struct__ == RemoteStream and
-                         format.content_format == Membrane.Opus))
+                         format.content_format == Membrane.Opus and
+                         format.type == :packetized))
 
   defguardp is_mpeg_audio_format(format)
             when is_struct(format) and
