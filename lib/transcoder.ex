@@ -437,10 +437,12 @@ defmodule Membrane.Transcoder do
 
     case {media_type!(input_format), media_type!(output_format)} do
       {:audio, :audio} ->
-        raise """
-        Bitrate option not supported for audio streams, but set to #{inspect(output_spec.bitrate)} for
-        #{inspect(output_format)} stream.
-        """
+        if output_spec.bitrate != :default do
+          raise """
+          Bitrate option not supported for audio streams, but set to #{inspect(output_spec.bitrate)} for
+          #{inspect(output_format)} stream.
+          """
+        end
 
         builder
         |> Audio.plug_audio_transcoding(
@@ -462,8 +464,8 @@ defmodule Membrane.Transcoder do
 
       {input_type, output_type} ->
         raise """
-        Cannot transcode #{to_string(input_type)} stream #{inspect(input_format)} to \
-        #{to_string(output_type)} stream #{inspect(output_format)}.
+        Cannot transcode #{inspect(input_type)} stream #{inspect(input_format)} to \
+        #{inspect(output_type)} stream #{inspect(output_format)}.
         """
     end
   end
