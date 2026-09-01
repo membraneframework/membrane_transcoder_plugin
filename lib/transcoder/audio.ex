@@ -5,25 +5,6 @@ defmodule Membrane.Transcoder.Audio do
   alias Membrane.{ChildrenSpec, RemoteStream, Transcoder}
   alias Membrane.Transcoder.OutputFormat
 
-  @aac_sample_rates [
-    96_000,
-    88_200,
-    64_000,
-    48_000,
-    44_100,
-    32_000,
-    24_000,
-    22_050,
-    16_000,
-    12_000,
-    11_025,
-    8000
-  ]
-
-  @aac_channels 1..8
-
-  @opus_channels 1..2
-
   @type input_format ::
           Membrane.AAC.t()
           | Membrane.Opus.t()
@@ -103,21 +84,6 @@ defmodule Membrane.Transcoder.Audio do
                   is_aac(format) or
                   is_opus(format) or
                   is_mpeg_audio(format)
-
-  defguard is_opus_compliant(format)
-           when is_map_key(format, :sample_format) and format.sample_format == :s16le and
-                  is_map_key(format, :sample_rate) and format.sample_rate == 48_000 and
-                  is_map_key(format, :channels) and format.channels in @opus_channels
-
-  defguard is_aac_compliant(format)
-           when is_map_key(format, :sample_format) and format.sample_format == :s16le and
-                  is_map_key(format, :sample_rate) and format.sample_rate in @aac_sample_rates and
-                  is_map_key(format, :channels) and format.channels in @aac_channels
-
-  defguard is_mp3_compliant(format)
-           when is_map_key(format, :sample_rate) and format.sample_rate == 44_100 and
-                  is_map_key(format, :sample_format) and format.sample_format == :s32le and
-                  is_map_key(format, :channels) and format.channels == 2
 
   @spec plug_audio_transcoding(
           ChildrenSpec.builder(),
@@ -291,13 +257,6 @@ defmodule Membrane.Transcoder.Audio do
       {key, value}
     end)
   end
-
-  # @spec get_accepted_raw_formats_spec_from_format(input_format() | output_format(), atom()) ::
-  #         [Membrane]
-  # defp get_accepted_raw_formats_spec_from_format(format, field) do
-  #   case Map.get(format, field, :any) do
-  #   end
-  # end
 
   @spec get_raw_audio_consuming_segment(
           output_format(),

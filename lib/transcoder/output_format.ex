@@ -156,60 +156,71 @@ defmodule Membrane.Transcoder.OutputFormat do
   ]
 
   @spec from_input_format(Transcoder.input_format()) :: t()
-  def from_input_format(input_format) do
-    case input_format do
-      %Membrane.H264{alignment: alignment, stream_structure: :annexb} ->
-        %H264{alignment: alignment, stream_structure: :annexb}
+  def from_input_format(%Membrane.H264{alignment: alignment, stream_structure: :annexb}) do
+    %H264{alignment: alignment, stream_structure: :annexb}
+  end
 
-      %Membrane.H264{alignment: alignment, stream_structure: {avc, _dcr}} ->
-        %H264{alignment: alignment, stream_structure: avc}
+  def from_input_format(%Membrane.H264{alignment: alignment, stream_structure: {avc, _dcr}}) do
+    %H264{alignment: alignment, stream_structure: avc}
+  end
 
-      %Membrane.H265{alignment: alignment, stream_structure: :annexb} ->
-        %H265{alignment: alignment, stream_structure: :annexb}
+  def from_input_format(%Membrane.H265{alignment: alignment, stream_structure: :annexb}) do
+    %H265{alignment: alignment, stream_structure: :annexb}
+  end
 
-      %Membrane.H265{alignment: alignment, stream_structure: {hevc, _dcr}} ->
-        %H265{alignment: alignment, stream_structure: hevc}
+  def from_input_format(%Membrane.H265{alignment: alignment, stream_structure: {hevc, _dcr}}) do
+    %H265{alignment: alignment, stream_structure: hevc}
+  end
 
-      %Membrane.RawVideo{pixel_format: pixel_format} ->
-        %RawVideo{pixel_format: pixel_format}
+  def from_input_format(%Membrane.RawVideo{pixel_format: pixel_format}) do
+    %RawVideo{pixel_format: pixel_format}
+  end
 
-      %Membrane.AAC{encapsulation: encapsulation, config: {config_type, _content}} ->
-        %AAC{encapsulation: encapsulation, config: config_type}
+  def from_input_format(%Membrane.AAC{
+        encapsulation: encapsulation,
+        config: {config_type, _content}
+      }) do
+    %AAC{encapsulation: encapsulation, config: config_type}
+  end
 
-      %Membrane.AAC{encapsulation: encapsulation, config: nil} ->
-        %AAC{encapsulation: encapsulation, config: nil}
+  def from_input_format(%Membrane.AAC{encapsulation: encapsulation, config: nil}) do
+    %AAC{encapsulation: encapsulation, config: nil}
+  end
 
-      %Membrane.Opus{self_delimiting?: self_delimiting?} ->
-        %Opus{self_delimiting?: self_delimiting?}
+  def from_input_format(%Membrane.Opus{self_delimiting?: self_delimiting?}) do
+    %Opus{self_delimiting?: self_delimiting?}
+  end
 
-      %Membrane.RawAudio{
+  def from_input_format(%Membrane.RawAudio{
         sample_format: sample_format,
         sample_rate: sample_rate,
         channels: channels
-      } ->
-        %RawAudio{
-          sample_format: sample_format,
-          sample_rate: sample_rate,
-          channels: channels
-        }
+      }) do
+    %RawAudio{
+      sample_format: sample_format,
+      sample_rate: sample_rate,
+      channels: channels
+    }
+  end
 
-      %Membrane.RemoteStream{content_format: format}
-      when format in @accepted_input_format_modules ->
-        format
-        |> Module.split()
-        |> List.last()
-        |> String.to_existing_atom()
-        |> then(&Module.concat(__MODULE__, &1))
-        |> struct!()
+  def from_input_format(%Membrane.RemoteStream{content_format: format})
+      when format in @accepted_input_format_modules do
+    format
+    |> Module.split()
+    |> List.last()
+    |> String.to_existing_atom()
+    |> then(&Module.concat(__MODULE__, &1))
+    |> struct!()
+  end
 
-      other_format
-      when is_struct(other_format) and other_format.__struct__ in @accepted_input_format_modules ->
-        other_format.__struct__
-        |> Module.split()
-        |> List.last()
-        |> String.to_existing_atom()
-        |> then(&Module.concat(__MODULE__, &1))
-        |> struct!()
-    end
+  def from_input_format(other_format)
+      when is_struct(other_format) and
+             other_format.__struct__ in @accepted_input_format_modules do
+    other_format.__struct__
+    |> Module.split()
+    |> List.last()
+    |> String.to_existing_atom()
+    |> then(&Module.concat(__MODULE__, &1))
+    |> struct!()
   end
 end

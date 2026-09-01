@@ -424,11 +424,9 @@ defmodule Membrane.Transcoder do
     end
   end
 
-  defp plug_transcoding(
-         builder,
-         input_format,
-         output_spec
-       ) do
+  @spec plug_transcoding(ChildrenSpec.builder(), input_format(), State.OutputSpec.t()) ::
+          ChildrenSpec.builder()
+  defp plug_transcoding(builder, input_format, output_spec) do
     use_hardware_acceleration? =
       should_use_hardware_acceleration?(output_spec.native_acceleration)
 
@@ -437,8 +435,8 @@ defmodule Membrane.Transcoder do
 
     transcoding_policy = resolve_transcoding_policy(output_spec.transcoding_policy, input_format)
 
-    cond do
-      Audio.is_audio_format(input_format) and Audio.is_audio_format(output_format) ->
+    case {media_type!(input_format), media_type!(output_format)} do
+      {:audio, :audio} ->
         if output_spec.bitrate != :default do
           raise """
           Bitrate option not supported for audio streams, but set to #{inspect(output_spec.bitrate)} for
@@ -454,7 +452,7 @@ defmodule Membrane.Transcoder do
           output_spec
         )
 
-      Video.is_video_format(input_format) and Video.is_video_format(output_format) ->
+      {:video, :video} ->
         builder
         |> Video.plug_video_transcoding(
           input_format,
@@ -464,22 +462,23 @@ defmodule Membrane.Transcoder do
           output_spec
         )
 
-      Audio.is_audio_format(input_format) and Video.is_video_format(output_format) ->
+      {input_type, output_type} ->
         raise """
-        Cannot transcode an audio stream #{inspect(input_format)} to a video stream #{inspect(output_format)}.
-        """
-
-      Video.is_video_format(input_format) and Audio.is_audio_format(output_format) ->
-        raise """
-        Cannot transcode a video stream #{inspect(input_format)} to an audio stream #{inspect(output_format)}.
-        """
-
-      true ->
-        raise """
-        Didn't recognize stream format #{inspect(input_format)}, check the `Membrane.Transcoder` moduledoc to
-        see the list of supported formats. You may also set the `:assumed_input_stream_format` option with a
-        stream format you want the transcoder to assume.
+        Cannot transcode #{inspect(input_type)} stream #{inspect(input_format)} to \
+        #{inspect(output_type)} stream #{inspect(output_format)}.
         """
     end
+  end
+
+  @spec media_type!(input_format() | OutputFormat.t()) :: :audio | :video
+  defp media_type!(format) when Audio.is_audio_format(format), do: :audio
+  defp media_type!(format) when Video.is_video_format(format), do: :video
+
+  defp media_type!(format) do
+    raise """
+    Didn't recognize stream format #{inspect(format)}, check the `Membrane.Transcoder` moduledoc to
+    see the list of supported formats. You may also set the `:assumed_input_stream_format` option with a
+    stream format you want the transcoder to assume.
+    """
   end
 end
