@@ -18,7 +18,7 @@ Mix.install(
 )
 
 defmodule Example do
-  alias Membrane.{H264, RCPipeline}
+  alias Membrane.{RCPipeline, Transcoder}
   require RCPipeline
   require Membrane.Pad
 
@@ -33,11 +33,11 @@ defmodule Example do
           location: input_file
         })
         |> child(:deserializer, Membrane.IVF.Deserializer)
-        |> child(:transcoder, Membrane.Transcoder),
+        |> child(:transcoder, Transcoder),
         get_child(:transcoder)
         |> via_out(Membrane.Pad.ref(:output, 0),
           options: [
-            output_stream_format: H264,
+            output_stream_format: Transcoder.OutputFormat.H264,
             native_acceleration: native_acceleration
           ]
         )

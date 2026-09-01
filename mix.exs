@@ -62,7 +62,7 @@ defmodule Membrane.Transcoder.Plugin.Mixfile do
       {:membrane_mp3_lame_plugin, "~> 0.18.3"},
       {:ex_doc, ">= 0.40.0", only: :dev, runtime: false},
       {:dialyxir, ">= 0.0.0", only: :dev, runtime: false},
-      {:credo, ">= 0.0.0", runtime: false},
+      {:credo, ">= 0.0.0", only: :dev, runtime: false},
       {:membrane_file_plugin, "~> 0.17.2", only: :test},
       {:membrane_raw_audio_parser_plugin, "~> 0.4.0", only: :test},
       {:membrane_ivf_plugin, "~> 0.8.0", only: :test}
@@ -98,7 +98,7 @@ defmodule Membrane.Transcoder.Plugin.Mixfile do
       main: "readme",
       extras: ["README.md", "LICENSE"],
       source_ref: "v#{@version}",
-      nest_modules_by_prefix: [Membrane.Template]
+      nest_modules_by_prefix: [Membrane.Transcoder, Membrane.Transcoder.OutputFormat]
     ]
   end
 
