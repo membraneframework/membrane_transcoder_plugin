@@ -11,7 +11,7 @@ defmodule Membrane.Transcoder do
   This struct determines the output stream format, as well parameters that can be set for this
   format.
 
-  When the `membrane_vk_video_plugin` dependency is present and Vulkan hardware is available,
+  When the `membrane_gpu_video_plugin` dependency is present and Vulkan hardware is available,
   H.264 encode/decode can be offloaded to the GPU by setting `native_acceleration: :if_available`.
 
   ## Usage
@@ -269,7 +269,7 @@ defmodule Membrane.Transcoder do
   defp should_use_hardware_acceleration?(_native_acceleration), do: false
 
   @doc """
-  Returns `true` if the optional `membrane_vk_video_plugin` dependency is installed
+  Returns `true` if the optional `membrane_gpu_video_plugin` dependency is installed
   and its modules can be loaded in the current runtime.
 
   Note: a `true` result only confirms the plugin is loadable - it does not guarantee that the
@@ -278,9 +278,9 @@ defmodule Membrane.Transcoder do
   """
   @spec vulkan_available?() :: boolean()
   def vulkan_available?() do
-    Code.ensure_loaded?(Membrane.VKVideo.Decoder) and
-      Code.ensure_loaded?(Membrane.VKVideo.Encoder) and
-      Code.ensure_loaded?(Membrane.VKVideo.Native)
+    Code.ensure_loaded?(Membrane.GPUVideo.Decoder) and
+      Code.ensure_loaded?(Membrane.GPUVideo.Encoder) and
+      Code.ensure_loaded?(Membrane.GPUVideo.Native)
   end
 
   defp maybe_plug_stream_format_changer(builder, nil), do: builder

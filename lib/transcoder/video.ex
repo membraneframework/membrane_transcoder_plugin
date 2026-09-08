@@ -220,7 +220,7 @@ defmodule Membrane.Transcoder.Video do
         output_stream_structure: :annexb,
         output_alignment: :au
       })
-      |> child({:vk_transcoder, output_spec.suffix}, Membrane.VKVideo.Transcoder)
+      |> child({:vk_transcoder, output_spec.suffix}, Membrane.GPUVideo.Transcoder)
       |> via_out(Pad.ref(:output, 0),
         options: [
           width: resolution.width,
@@ -308,7 +308,7 @@ defmodule Membrane.Transcoder.Video do
               output_stream_structure: :annexb,
               output_alignment: :au
             })
-            |> child({:vk_h264_decoder, suffix}, Membrane.VKVideo.Decoder))
+            |> child({:vk_h264_decoder, suffix}, Membrane.GPUVideo.Decoder))
 
         {pipeline_segment, @vkvideo_pixel_formats}
 
@@ -380,7 +380,7 @@ defmodule Membrane.Transcoder.Video do
           &(&1
             |> child(
               {:vk_h264_encoder, suffix},
-              struct!(Membrane.VKVideo.Encoder,
+              struct!(Membrane.GPUVideo.Encoder,
                 rate_control: get_vkvideo_rate_control(output_spec.bitrate)
               )
             )
@@ -505,7 +505,7 @@ defmodule Membrane.Transcoder.Video do
          virtual_buffer_size: virtual_buffer_size
        }) do
     {:constant_bitrate,
-     struct!(Membrane.VKVideo.Encoder.ConstantBitrate,
+     struct!(Membrane.GPUVideo.Encoder.ConstantBitrate,
        bitrate: bitrate,
        virtual_buffer_size_ms: Membrane.Time.as_milliseconds(virtual_buffer_size, :round)
      )}
@@ -517,7 +517,7 @@ defmodule Membrane.Transcoder.Video do
          virtual_buffer_size: virtual_buffer_size
        }) do
     {:variable_bitrate,
-     struct!(Membrane.VKVideo.Encoder.VariableBitrate,
+     struct!(Membrane.GPUVideo.Encoder.VariableBitrate,
        average_bitrate: avg,
        max_bitrate: max,
        virtual_buffer_size_ms: Membrane.Time.as_milliseconds(virtual_buffer_size, :round)

@@ -38,7 +38,7 @@ defmodule Membrane.Transcoder.Plugin.Mixfile do
 
   defp deps do
     [
-      {:membrane_vk_video_plugin, "~> 0.2.0", optional: true},
+      {:membrane_gpu_video_plugin, "~> 0.2.3", optional: true},
       {:membrane_core, "~> 1.2 and >= 1.2.1"},
       {:membrane_tee_plugin, "~> 0.12.0"},
       {:membrane_opus_plugin, "~> 0.20.3"},
@@ -48,7 +48,9 @@ defmodule Membrane.Transcoder.Plugin.Mixfile do
       {:membrane_h26x_plugin, "~> 0.10.0"},
       {:membrane_h264_ffmpeg_plugin, "~> 0.32.0"},
       {:membrane_h265_ffmpeg_plugin, "~> 0.4.2"},
-      {:membrane_ffmpeg_swresample_plugin, "~> 0.20.0"},
+      {:membrane_ffmpeg_swresample_plugin, "~> 0.21.0"},
+      # {:membrane_ffmpeg_swresample_plugin,
+      #  path: "../membrane_ffmpeg_swresample_plugin/", override: true},
       {:membrane_ffmpeg_swscale_plugin, "~> 0.16.2"},
       {:membrane_timestamp_queue, "~> 0.2.2"},
       {:membrane_h264_format, "~> 0.6.1"},
