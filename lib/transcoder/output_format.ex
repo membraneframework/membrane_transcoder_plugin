@@ -7,18 +7,23 @@ defmodule Membrane.Transcoder.OutputFormat do
   have `:stream_structure` field set to `:annexb`, and `:alignment` to `:au`.
   """
 
+  alias Membrane.Transcoder
   alias __MODULE__.{AAC, H264, H265, MPEGAudio, Opus, RawAudio, RawVideo, VP8, VP9}
 
-  @type t ::
-          H264.t()
-          | H265.t()
-          | VP8.t()
+  @type video ::
+          VP8.t()
           | VP9.t()
+          | H264.t()
+          | H265.t()
           | RawVideo.t()
-          | AAC.t()
+
+  @type audio ::
+          AAC.t()
           | Opus.t()
           | MPEGAudio.t()
           | RawAudio.t()
+
+  @type t :: audio() | video()
 
   @type mod ::
           H264
@@ -116,7 +121,7 @@ defmodule Membrane.Transcoder.OutputFormat do
 
   defmodule MPEGAudio do
     @moduledoc """
-    Struct defining the desired output Membrane stream format.
+    Struct defining the desired output MPEGAudio stream format.
     """
 
     @type t :: %__MODULE__{}
@@ -133,8 +138,89 @@ defmodule Membrane.Transcoder.OutputFormat do
             sample_rate: Membrane.RawAudio.sample_rate_t() | :any,
             channels: Membrane.RawAudio.channels_t() | :any
           }
-    defstruct sample_format: :s16le,
-              sample_rate: 48_000,
-              channels: 1
+    defstruct sample_format: :any,
+              sample_rate: :any,
+              channels: :any
+  end
+
+  @accepted_input_format_modules [
+    Membrane.H264,
+    Membrane.H265,
+    Membrane.VP8,
+    Membrane.VP9,
+    Membrane.RawVideo,
+    Membrane.AAC,
+    Membrane.Opus,
+    Membrane.MPEGAudio,
+    Membrane.RawAudio
+  ]
+
+  @spec from_input_format(Transcoder.input_format()) :: t()
+  def from_input_format(%Membrane.H264{alignment: alignment, stream_structure: :annexb}) do
+    %H264{alignment: alignment, stream_structure: :annexb}
+  end
+
+  def from_input_format(%Membrane.H264{alignment: alignment, stream_structure: {avc, _dcr}}) do
+    %H264{alignment: alignment, stream_structure: avc}
+  end
+
+  def from_input_format(%Membrane.H265{alignment: alignment, stream_structure: :annexb}) do
+    %H265{alignment: alignment, stream_structure: :annexb}
+  end
+
+  def from_input_format(%Membrane.H265{alignment: alignment, stream_structure: {hevc, _dcr}}) do
+    %H265{alignment: alignment, stream_structure: hevc}
+  end
+
+  def from_input_format(%Membrane.RawVideo{pixel_format: pixel_format}) do
+    %RawVideo{pixel_format: pixel_format}
+  end
+
+  def from_input_format(%Membrane.AAC{
+        encapsulation: encapsulation,
+        config: {config_type, _content}
+      }) do
+    %AAC{encapsulation: encapsulation, config: config_type}
+  end
+
+  def from_input_format(%Membrane.AAC{encapsulation: encapsulation, config: nil}) do
+    %AAC{encapsulation: encapsulation, config: nil}
+  end
+
+  def from_input_format(%Membrane.Opus{self_delimiting?: self_delimiting?}) do
+    %Opus{self_delimiting?: self_delimiting?}
+  end
+
+  def from_input_format(%Membrane.RawAudio{
+        sample_format: sample_format,
+        sample_rate: sample_rate,
+        channels: channels
+      }) do
+    %RawAudio{
+      sample_format: sample_format,
+      sample_rate: sample_rate,
+      channels: channels
+    }
+  end
+
+  def from_input_format(%Membrane.RemoteStream{content_format: format})
+      when format in @accepted_input_format_modules do
+    format
+    |> Module.split()
+    |> List.last()
+    |> String.to_existing_atom()
+    |> then(&Module.concat(__MODULE__, &1))
+    |> struct!()
+  end
+
+  def from_input_format(other_format)
+      when is_struct(other_format) and
+             other_format.__struct__ in @accepted_input_format_modules do
+    other_format.__struct__
+    |> Module.split()
+    |> List.last()
+    |> String.to_existing_atom()
+    |> then(&Module.concat(__MODULE__, &1))
+    |> struct!()
   end
 end

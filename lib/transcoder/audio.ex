@@ -5,31 +5,13 @@ defmodule Membrane.Transcoder.Audio do
   alias Membrane.{ChildrenSpec, RemoteStream, Transcoder}
   alias Membrane.Transcoder.OutputFormat
 
-  @aac_sample_rates [
-    96_000,
-    88_200,
-    64_000,
-    48_000,
-    44_100,
-    32_000,
-    24_000,
-    22_050,
-    16_000,
-    12_000,
-    11_025,
-    8000
-  ]
-
-  @aac_channels 1..8
-
-  @opus_channels 1..2
-
   @type input_format ::
           Membrane.AAC.t()
           | Membrane.Opus.t()
           | Membrane.MPEGAudio.t()
           | Membrane.RawAudio.t()
-          | %RemoteStream{content_format: Membrane.AAC | Membrane.Opus | Membrane.MPEGAudio}
+          | %RemoteStream{content_format: Membrane.AAC | Membrane.MPEGAudio}
+          | %RemoteStream{content_format: Membrane.Opus, type: :packetized}
 
   @type output_format ::
           OutputFormat.AAC.t()
@@ -46,11 +28,11 @@ defmodule Membrane.Transcoder.Audio do
   @aac_encoder_accepted_raw_formats_spec %{
     sample_format: [:s16le],
     sample_rate: [
+      44_100,
       96_000,
       88_200,
       64_000,
       48_000,
-      44_100,
       32_000,
       24_000,
       22_050,
@@ -65,7 +47,7 @@ defmodule Membrane.Transcoder.Audio do
   @opus_encoder_accepted_raw_formats_spec %{
     sample_format: [:s16le],
     sample_rate: [48_000],
-    channels: [1, 2]
+    channels: [2, 1]
   }
 
   @mp3_encoder_accepted_raw_formats_spec %{
@@ -88,7 +70,8 @@ defmodule Membrane.Transcoder.Audio do
             when is_struct(format) and
                    (format.__struct__ in [Membrane.Opus, OutputFormat.Opus] or
                       (format.__struct__ == RemoteStream and
-                         format.content_format == Membrane.Opus))
+                         format.content_format == Membrane.Opus and
+                         format.type == :packetized))
 
   defguardp is_mpeg_audio(format)
             when is_struct(format) and
@@ -101,21 +84,6 @@ defmodule Membrane.Transcoder.Audio do
                   is_aac(format) or
                   is_opus(format) or
                   is_mpeg_audio(format)
-
-  defguard is_opus_compliant(format)
-           when is_map_key(format, :sample_format) and format.sample_format == :s16le and
-                  is_map_key(format, :sample_rate) and format.sample_rate == 48_000 and
-                  is_map_key(format, :channels) and format.channels in @opus_channels
-
-  defguard is_aac_compliant(format)
-           when is_map_key(format, :sample_format) and format.sample_format == :s16le and
-                  is_map_key(format, :sample_rate) and format.sample_rate in @aac_sample_rates and
-                  is_map_key(format, :channels) and format.channels in @aac_channels
-
-  defguard is_mp3_compliant(format)
-           when is_map_key(format, :sample_rate) and format.sample_rate == 44_100 and
-                  is_map_key(format, :sample_format) and format.sample_format == :s32le and
-                  is_map_key(format, :channels) and format.channels == 2
 
   @spec plug_audio_transcoding(
           ChildrenSpec.builder(),
@@ -237,7 +205,24 @@ defmodule Membrane.Transcoder.Audio do
             |> child({:aac_input_parser, suffix}, Membrane.AAC.Parser)
             |> child({:aac_decoder, suffix}, Membrane.AAC.FDK.Decoder))
 
-        {pipeline_segment, get_accepted_raw_formats_spec_from_format(input_format)}
+        accepted_raw_formats_spec = %{
+          sample_format: [:s16le],
+          sample_rate:
+            case input_format do
+              %Membrane.AAC{sample_rate: sample_rate} when not is_nil(sample_rate) ->
+                [sample_rate]
+
+              _sample_rate_unknown ->
+                :any
+            end,
+          channels:
+            case input_format do
+              %Membrane.AAC{channels: channels} when not is_nil(channels) -> [channels]
+              _sample_rate_unknown -> :any
+            end
+        }
+
+        {pipeline_segment, accepted_raw_formats_spec}
 
       input_format when is_opus(input_format) ->
         pipeline_segment =
@@ -264,8 +249,8 @@ defmodule Membrane.Transcoder.Audio do
     [:sample_format, :sample_rate, :channels]
     |> Map.new(fn key ->
       value =
-        case Map.get(format, key) do
-          nil -> :any
+        case Map.get(format, key, :any) do
+          :any -> :any
           value -> [value]
         end
 
@@ -354,7 +339,8 @@ defmodule Membrane.Transcoder.Audio do
     else
       &(&1
         |> child({:resampler, output_spec.suffix}, %Membrane.FFmpeg.SWResample.Converter{
-          output_stream_format: resampler_output_format
+          output_stream_format:
+            struct!(Membrane.FFmpeg.SWResample.Converter.OutputFormat, resampler_output_format)
         }))
     end
   end
