@@ -679,7 +679,7 @@ defmodule Membrane.Transcoder.IntegrationTest do
   end
 
   @tag :vulkan
-  test "uses VKVideo decoder and encoder when native_acceleration is :if_available" do
+  test "uses GPUVideo decoder and encoder when native_acceleration is :if_available" do
     pid = Testing.Pipeline.start_link_supervised!()
 
     spec = [
