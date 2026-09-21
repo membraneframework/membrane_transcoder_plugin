@@ -329,9 +329,10 @@ defmodule Membrane.Transcoder.Video do
     rate_control = get_vkvideo_rate_control(bitrate)
 
     builder
-    |> child(child_name(suffix, :vk_h264_encoder), %Membrane.VKVideo.Encoder{
-      rate_control: rate_control
-    })
+    |> child(
+      child_name(suffix, :vk_h264_encoder),
+      struct!(Membrane.VKVideo.Encoder, rate_control: rate_control)
+    )
     |> child(child_name(suffix, :h264_output_parser), %H264.Parser{
       output_stream_structure: stream_structure_type(h264),
       output_alignment: h264.alignment
@@ -424,10 +425,10 @@ defmodule Membrane.Transcoder.Video do
          virtual_buffer_size: virtual_buffer_size
        }) do
     {:constant_bitrate,
-     %Membrane.VKVideo.Encoder.ConstantBitrate{
+     struct!(Membrane.VKVideo.Encoder.ConstantBitrate,
        bitrate: bitrate,
        virtual_buffer_size_ms: Membrane.Time.as_milliseconds(virtual_buffer_size, :round)
-     }}
+     )}
   end
 
   defp get_vkvideo_rate_control(%VariableBitrate{
@@ -436,11 +437,11 @@ defmodule Membrane.Transcoder.Video do
          virtual_buffer_size: virtual_buffer_size
        }) do
     {:variable_bitrate,
-     %Membrane.VKVideo.Encoder.VariableBitrate{
+     struct!(Membrane.VKVideo.Encoder.VariableBitrate,
        average_bitrate: avg,
        max_bitrate: max,
        virtual_buffer_size_ms: Membrane.Time.as_milliseconds(virtual_buffer_size, :round)
-     }}
+     )}
   end
 
   defp get_h264_ffmpeg_params(nil), do: %{}
