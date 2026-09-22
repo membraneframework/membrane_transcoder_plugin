@@ -134,13 +134,13 @@ defmodule Membrane.Transcoder.OutputFormat do
     """
 
     @type t :: %__MODULE__{
-            sample_format: Membrane.RawAudio.SampleFormat.t(),
-            sample_rate: Membrane.RawAudio.sample_rate_t(),
-            channels: Membrane.RawAudio.channels_t()
+            sample_format: Membrane.RawAudio.SampleFormat.t() | :any,
+            sample_rate: Membrane.RawAudio.sample_rate_t() | :any,
+            channels: Membrane.RawAudio.channels_t() | :any
           }
-    defstruct sample_format: :s16le,
-              sample_rate: 48_000,
-              channels: 1
+    defstruct sample_format: :any,
+              sample_rate: :any,
+              channels: :any
   end
 
   @accepted_input_format_modules [
@@ -154,6 +154,22 @@ defmodule Membrane.Transcoder.OutputFormat do
     Membrane.MPEGAudio,
     Membrane.RawAudio
   ]
+
+  @doc false
+  @spec same_format?(Transcoder.input_format(), t()) :: boolean()
+  def same_format?(input_format, output_format) do
+    input_format_suffix =
+      case input_format do
+        %Membrane.RemoteStream{content_format: format} -> format
+        stream_format -> stream_format.__struct__
+      end
+      |> Module.split()
+      |> List.last()
+
+    output_format_suffix = output_format.__struct__ |> Module.split() |> List.last()
+
+    input_format_suffix == output_format_suffix
+  end
 
   @spec from_input_format(Transcoder.input_format()) :: t()
   def from_input_format(%Membrane.H264{alignment: alignment, stream_structure: :annexb}) do

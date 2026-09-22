@@ -12,8 +12,8 @@ defmodule Example do
 
   @doc """
   Transcodes a single H264 input into three output files simultaneously:
-    - output 0: H264 (annexb, repackaged — no re-encode)
-    - output 1: H265 (transcoded)
+    - output 0: H264 (annexb, repackaged, no re-encode)
+    - output 1: H265 (transcoded and scaled down to 320x160)
     - output 2: VP8  (transcoded)
 
   Each output pad carries its own `output_stream_format`, `transcoding_policy`, and
@@ -31,29 +31,29 @@ defmodule Example do
       })
       |> child(:transcoder, %Transcoder{transcoding_policy: :if_needed}),
 
-      # Output 0 — keep H264, just repackage (no re-encode)
+      # Output 0: keep H264, just repackage (no re-encode)
       get_child(:transcoder)
       |> via_out(Membrane.Pad.ref(:output, 0),
         options: [
           output_stream_format: %Transcoder.OutputFormat.H264{
             alignment: :au,
             stream_structure: :annexb
-          },
-          resolution: %{width: 320, height: 160}
+          }
         ]
       )
       |> child(:h264_sink, %Membrane.File.Sink{location: h264_output_file}),
 
-      # Output 1 — transcode to H265
+      # Output 1: transcode to H265 and scale down
       get_child(:transcoder)
       |> via_out(Membrane.Pad.ref(:output, 1),
         options: [
-          output_stream_format: Transcoder.OutputFormat.H265
+          output_stream_format: Transcoder.OutputFormat.H265,
+          resolution: %{width: 320, height: 160}
         ]
       )
       |> child(:h265_sink, %Membrane.File.Sink{location: h265_output_file}),
 
-      # Output 2 — transcode to VP8
+      # Output 2: transcode to VP8
       get_child(:transcoder)
       |> via_out(Membrane.Pad.ref(:output, 2),
         options: [
