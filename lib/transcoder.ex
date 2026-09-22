@@ -355,7 +355,7 @@ defmodule Membrane.Transcoder do
         [{_pad_ref, output_spec}] = output_specs_list
 
         get_child(:input_connector)
-        |> plug_transcoding(format, output_spec)
+        |> plug_conversion(format, output_spec)
         |> get_child(output_spec.connector_name)
       else
         # Build tee and all output pipelines in a single spec so the tee
@@ -366,7 +366,7 @@ defmodule Membrane.Transcoder do
           Enum.map(output_specs_list, fn {_pad_ref, output_spec} ->
             get_child(:tee)
             |> via_out(Pad.ref(:output, output_spec.pad_id))
-            |> plug_transcoding(format, output_spec)
+            |> plug_conversion(format, output_spec)
             |> get_child(output_spec.connector_name)
           end)
 
@@ -424,9 +424,9 @@ defmodule Membrane.Transcoder do
     end
   end
 
-  @spec plug_transcoding(ChildrenSpec.builder(), input_format(), State.OutputSpec.t()) ::
+  @spec plug_conversion(ChildrenSpec.builder(), input_format(), State.OutputSpec.t()) ::
           ChildrenSpec.builder()
-  defp plug_transcoding(builder, input_format, output_spec) do
+  defp plug_conversion(builder, input_format, output_spec) do
     use_hardware_acceleration? =
       should_use_hardware_acceleration?(output_spec.native_acceleration)
 
@@ -445,7 +445,7 @@ defmodule Membrane.Transcoder do
         end
 
         builder
-        |> Audio.plug_audio_transcoding(
+        |> Audio.plug_audio_conversion(
           input_format,
           output_format,
           transcoding_policy,
@@ -454,7 +454,7 @@ defmodule Membrane.Transcoder do
 
       {:video, :video} ->
         builder
-        |> Video.plug_video_transcoding(
+        |> Video.plug_video_conversion(
           input_format,
           output_format,
           transcoding_policy,

@@ -155,6 +155,22 @@ defmodule Membrane.Transcoder.OutputFormat do
     Membrane.RawAudio
   ]
 
+  @doc false
+  @spec same_format?(Transcoder.input_format(), t()) :: boolean()
+  def same_format?(input_format, output_format) do
+    input_format_suffix =
+      case input_format do
+        %Membrane.RemoteStream{content_format: format} -> format
+        stream_format -> stream_format.__struct__
+      end
+      |> Module.split()
+      |> List.last()
+
+    output_format_suffix = output_format.__struct__ |> Module.split() |> List.last()
+
+    input_format_suffix == output_format_suffix
+  end
+
   @spec from_input_format(Transcoder.input_format()) :: t()
   def from_input_format(%Membrane.H264{alignment: alignment, stream_structure: :annexb}) do
     %H264{alignment: alignment, stream_structure: :annexb}

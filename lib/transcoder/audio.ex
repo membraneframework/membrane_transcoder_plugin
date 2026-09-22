@@ -85,14 +85,14 @@ defmodule Membrane.Transcoder.Audio do
                   is_opus(format) or
                   is_mpeg_audio(format)
 
-  @spec plug_audio_transcoding(
+  @spec plug_audio_conversion(
           ChildrenSpec.builder(),
           input_format(),
           output_format(),
           Transcoder.transcoding_policy(),
           Transcoder.State.OutputSpec.t()
         ) :: ChildrenSpec.builder()
-  def plug_audio_transcoding(
+  def plug_audio_conversion(
         builder,
         input_format,
         output_format,
@@ -117,26 +117,23 @@ defmodule Membrane.Transcoder.Audio do
   @spec should_be_transcoded(input_format(), output_format(), Transcoder.transcoding_policy()) ::
           boolean()
   defp should_be_transcoded(input_format, output_format, transcoding_policy) do
+    # There is no MPEG audio parser, so decoding and re-encoding is the only way
+    # to turn an unparsed remote stream into a proper Membrane.MPEGAudio stream.
     transcoding_policy == :always or
-      not are_same_formats(input_format, output_format) or
-      (input_format.__struct__ == Membrane.RawAudio and
-         output_format.__struct__ == OutputFormat.RawAudio)
+      not OutputFormat.same_format?(input_format, output_format) or
+      match?(%RemoteStream{content_format: Membrane.MPEGAudio}, input_format) or
+      raw_audio_params_changing?(input_format, output_format)
   end
 
-  @spec are_same_formats(input_format(), output_format()) :: boolean()
-  defp are_same_formats(input_format, output_format) do
-    input_format_suffix =
-      case input_format do
-        %RemoteStream{content_format: format} -> format
-        stream_format -> stream_format.__struct__
-      end
-      |> Module.split()
-      |> List.last()
-
-    output_format_suffix = output_format.__struct__ |> Module.split() |> List.last()
-
-    input_format_suffix == output_format_suffix
+  @spec raw_audio_params_changing?(input_format(), output_format()) :: boolean()
+  defp raw_audio_params_changing?(%Membrane.RawAudio{} = input, %OutputFormat.RawAudio{} = output) do
+    [:sample_format, :sample_rate, :channels]
+    |> Enum.any?(fn key ->
+      Map.fetch!(output, key) not in [:any, Map.fetch!(input, key)]
+    end)
   end
+
+  defp raw_audio_params_changing?(_input_format, _output_format), do: false
 
   @spec plug_non_transcoding_conversion(
           ChildrenSpec.builder(),
@@ -149,7 +146,11 @@ defmodule Membrane.Transcoder.Audio do
 
     case {input_format, output_format} do
       {input_format, %OutputFormat.AAC{}} when is_aac(input_format) ->
-        builder |> child({:aac_input_parser, suffix}, Membrane.AAC.Parser)
+        builder
+        |> child({:aac_parser, suffix}, %Membrane.AAC.Parser{
+          output_config: output_format.config,
+          out_encapsulation: output_format.encapsulation
+        })
 
       {input_format, %OutputFormat.Opus{}} when is_opus(input_format) ->
         builder
@@ -157,7 +158,10 @@ defmodule Membrane.Transcoder.Audio do
           delimitation: if(output_format.self_delimiting?, do: :delimit, else: :undelimit)
         })
 
-      _other ->
+      {%Membrane.MPEGAudio{}, %OutputFormat.MPEGAudio{}} ->
+        builder
+
+      {%Membrane.RawAudio{}, %OutputFormat.RawAudio{}} ->
         builder
     end
   end

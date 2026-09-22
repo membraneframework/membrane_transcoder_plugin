@@ -57,7 +57,7 @@ defmodule Membrane.Transcoder.Video do
   @x264_x265_pixel_formats [:I420, :I422]
   @vkvideo_pixel_formats [:NV12]
 
-  @spec plug_video_transcoding(
+  @spec plug_video_conversion(
           ChildrenSpec.builder(),
           Transcoder.video_input_format(),
           OutputFormat.video(),
@@ -65,7 +65,7 @@ defmodule Membrane.Transcoder.Video do
           boolean(),
           Transcoder.State.OutputSpec.t()
         ) :: ChildrenSpec.builder()
-  def plug_video_transcoding(
+  def plug_video_conversion(
         builder,
         input_format,
         output_format,
@@ -111,7 +111,7 @@ defmodule Membrane.Transcoder.Video do
     transcoding_policy == :always or
       resolution_changing?(input_format, output_spec.resolution) or
       output_spec.bitrate != :default or
-      not are_same_formats(input_format, output_format)
+      not OutputFormat.same_format?(input_format, output_format)
   end
 
   @spec resolution_changing?(input_format(), Transcoder.resolution()) :: boolean()
@@ -123,21 +123,6 @@ defmodule Membrane.Transcoder.Video do
       %{width: width, height: height} ->
         width != Map.get(input_format, :width) or height != Map.get(input_format, :height)
     end
-  end
-
-  @spec are_same_formats(Transcoder.video_input_format(), OutputFormat.video()) :: boolean()
-  defp are_same_formats(input_format, output_format) do
-    input_format_suffix =
-      case input_format do
-        %RemoteStream{content_format: format} -> format
-        stream_format -> stream_format.__struct__
-      end
-      |> Module.split()
-      |> List.last()
-
-    output_format_suffix = output_format.__struct__ |> Module.split() |> List.last()
-
-    input_format_suffix == output_format_suffix
   end
 
   @spec plug_non_transcoding_conversion(
