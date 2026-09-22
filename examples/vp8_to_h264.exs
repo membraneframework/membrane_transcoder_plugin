@@ -3,7 +3,7 @@ use_native = System.argv() |> Enum.member?("--native")
 vk_dep =
   if use_native &&
        match?({_, 0}, System.cmd("pkg-config", ["--exists", "vulkan"], stderr_to_stdout: true)) do
-    [{:membrane_vk_video_plugin, "~> 0.2.0"}]
+    [{:membrane_gpu_video_plugin, "~> 0.2.3"}]
   else
     []
   end
@@ -33,13 +33,10 @@ defmodule Example do
           location: input_file
         })
         |> child(:deserializer, Membrane.IVF.Deserializer)
-        |> child(:transcoder, Transcoder),
+        |> child(:transcoder, %Transcoder{native_acceleration: native_acceleration}),
         get_child(:transcoder)
         |> via_out(Membrane.Pad.ref(:output, 0),
-          options: [
-            output_stream_format: Transcoder.OutputFormat.H264,
-            native_acceleration: native_acceleration
-          ]
+          options: [output_stream_format: Transcoder.OutputFormat.H264]
         )
         |> child(:sink, %Membrane.File.Sink{location: output_file})
       ]
